@@ -14,12 +14,11 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 (ns org.apache.storm.trident.testing
-  (:require [org.apache.storm.LocalDRPC :as LocalDRPC])
   (:import [org.apache.storm.trident.testing FeederBatchSpout FeederCommitterBatchSpout MemoryMapState MemoryMapState$Factory TuplifyArgs])
-  (:require [org.apache.storm [LocalDRPC]])
   (:import [org.apache.storm LocalDRPC])
   (:import [org.apache.storm.tuple Fields])
-  (:import [org.apache.storm.generated KillOptions])
+  (:import [org.apache.storm.generated KillOptions]
+           [org.json.simple JSONValue])
   (:require [org.apache.storm [testing :as t]])
   (:use [org.apache.storm util])
   )
@@ -28,11 +27,11 @@
   (LocalDRPC.))
 
 (defn exec-drpc [^LocalDRPC drpc function-name args]
-  (let [res (.execute drpc function-name args)]
-    (from-json res)))
+  (if-let [res (.execute drpc function-name args)]
+    (clojurify-structure (JSONValue/parse res))))
 
 (defn exec-drpc-tuples [^LocalDRPC drpc function-name tuples]
-  (exec-drpc drpc function-name (to-json tuples)))
+  (exec-drpc drpc function-name (JSONValue/toJSONString tuples)))
 
 (defn feeder-spout [fields]
   (FeederBatchSpout. fields))

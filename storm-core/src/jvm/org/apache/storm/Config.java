@@ -17,6 +17,7 @@
  */
 package org.apache.storm;
 
+import org.apache.storm.container.ResourceIsolationInterface;
 import org.apache.storm.scheduler.resource.strategies.eviction.IEvictionStrategy;
 import org.apache.storm.scheduler.resource.strategies.priority.ISchedulingPriorityStrategy;
 import org.apache.storm.scheduler.resource.strategies.scheduling.IStrategy;
@@ -138,6 +139,45 @@ public class Config extends HashMap<String, Object> {
      */
     @isString
     public static final String STORM_META_SERIALIZATION_DELEGATE = "storm.meta.serialization.delegate";
+
+    /**
+     * A list of daemon metrics  reporter plugin class names.
+     * These plugins must implement {@link org.apache.storm.daemon.metrics.reporters.PreparableReporter} interface.
+     */
+    @isStringList
+    public static final String STORM_DAEMON_METRICS_REPORTER_PLUGINS = "storm.daemon.metrics.reporter.plugins";
+
+    /**
+     * A specify Locale for daemon metrics reporter plugin.
+     * Use the specified IETF BCP 47 language tag string for a Locale.
+     */
+    @isString
+    public static final String STORM_DAEMON_METRICS_REPORTER_PLUGIN_LOCALE = "storm.daemon.metrics.reporter.plugin.locale";
+
+    /**
+     * A specify domain for daemon metrics reporter plugin to limit reporting to specific domain.
+     */
+    @isString
+    public static final String STORM_DAEMON_METRICS_REPORTER_PLUGIN_DOMAIN = "storm.daemon.metrics.reporter.plugin.domain";
+
+    /**
+     * A specify rate-unit in TimeUnit to specify reporting frequency for daemon metrics reporter plugin.
+     */
+    @isString
+    public static final String STORM_DAEMON_METRICS_REPORTER_PLUGIN_RATE_UNIT = "storm.daemon.metrics.reporter.plugin.rate.unit";
+
+    /**
+     * A specify duration-unit in TimeUnit to specify reporting window for daemon metrics reporter plugin.
+     */
+    @isString
+    public static final String STORM_DAEMON_METRICS_REPORTER_PLUGIN_DURATION_UNIT = "storm.daemon.metrics.reporter.plugin.duration.unit";
+
+
+    /**
+     * A specify csv reporter directory for CvsPreparableReporter daemon metrics reporter.
+     */
+    @isString
+    public static final String STORM_DAEMON_METRICS_REPORTER_CSV_LOG_DIR = "storm.daemon.metrics.reporter.csv.log.dir";
 
     /**
      * A list of hosts of ZooKeeper servers used to manage the cluster.
@@ -634,6 +674,15 @@ public class Config extends HashMap<String, Object> {
      */
     @isStringList
     public static final String NIMBUS_AUTO_CRED_PLUGINS = "nimbus.autocredential.plugins.classes";
+
+    /**
+     * Nimbus thrift server queue size, default is 100000. This is the request queue size , when there are more requests
+     * than number of threads to serve the requests, those requests will be queued to this queue. If the request queue
+     * size > this config, then the incoming requests will be rejected.
+     */
+    @isInteger
+    @isPositiveNumber
+    public static final String NIMBUS_QUEUE_SIZE = "nimbus.queue.size";
 
     /**
      * FQCN of a class that implements {@code ISubmitterHook} @see ISubmitterHook for details.
@@ -2155,6 +2204,73 @@ public class Config extends HashMap<String, Object> {
     @isString
     public static final Object CLIENT_JAR_TRANSFORMER = "client.jartransformer.class";
 
+
+    /**
+     * The plugin to be used for resource isolation
+     */
+    @isImplementationOfClass(implementsClass = ResourceIsolationInterface.class)
+    public static final Object STORM_RESOURCE_ISOLATION_PLUGIN = "storm.resource.isolation.plugin";
+
+    /**
+     * CGroup Setting below
+     */
+
+    /**
+     * root directory of the storm cgroup hierarchy
+     */
+    @isString
+    public static final Object STORM_CGROUP_HIERARCHY_DIR = "storm.cgroup.hierarchy.dir";
+
+    /**
+     * resources to to be controlled by cgroups
+     */
+    @isStringList
+    public static final Object STORM_CGROUP_RESOURCES = "storm.cgroup.resources";
+
+    /**
+     * name for the cgroup hierarchy
+     */
+    @isString
+    public static final Object STORM_CGROUP_HIERARCHY_NAME = "storm.cgroup.hierarchy.name";
+
+    /**
+     * flag to determine whether to use a resource isolation plugin
+     * Also determines whether the unit tests for cgroup runs.
+     * If storm.resource.isolation.plugin.enable is set to false the unit tests for cgroups will not run
+     */
+    @isBoolean
+    public static final String STORM_RESOURCE_ISOLATION_PLUGIN_ENABLE = "storm.resource.isolation.plugin.enable";
+
+    /**
+     * root directory for cgoups
+     */
+    @isString
+    public static String STORM_SUPERVISOR_CGROUP_ROOTDIR = "storm.supervisor.cgroup.rootdir";
+
+    /**
+     * the manually set memory limit (in MB) for each CGroup on supervisor node
+     */
+    @isPositiveNumber
+    public static String STORM_WORKER_CGROUP_MEMORY_MB_LIMIT = "storm.worker.cgroup.memory.mb.limit";
+
+    /**
+     * the manually set cpu share for each CGroup on supervisor node
+     */
+    @isPositiveNumber
+    public static String STORM_WORKER_CGROUP_CPU_LIMIT = "storm.worker.cgroup.cpu.limit";
+
+    /**
+     * full path to cgexec command
+     */
+    @isString
+    public static String STORM_CGROUP_CGEXEC_CMD = "storm.cgroup.cgexec.cmd";
+
+    /**
+     * The amount of memory a worker can exceed its allocation before cgroup will kill it
+     */
+    @isPositiveNumber
+    public static String STORM_CGROUP_MEMORY_LIMIT_TOLERANCE_MARGIN_MB = "storm.cgroup.memory.limit.tolerance.margin.mb";
+
     public static void setClasspath(Map conf, String cp) {
         conf.put(Config.TOPOLOGY_CLASSPATH, cp);
     }
@@ -2366,5 +2482,25 @@ public class Config extends HashMap<String, Object> {
         if (clazz != null) {
             this.put(Config.TOPOLOGY_SCHEDULER_STRATEGY, clazz.getName());
         }
+    }
+
+    public static String getCgroupRootDir(Map conf) {
+        return (String) conf.get(STORM_SUPERVISOR_CGROUP_ROOTDIR);
+    }
+
+    public static String getCgroupStormHierarchyDir(Map conf) {
+        return (String) conf.get(Config.STORM_CGROUP_HIERARCHY_DIR);
+    }
+
+    public static ArrayList<String> getCgroupStormResources(Map conf) {
+        ArrayList<String> ret = new ArrayList<String>();
+        for (String entry : ((Iterable<String>) conf.get(Config.STORM_CGROUP_RESOURCES))) {
+            ret.add(entry);
+        }
+        return ret;
+    }
+
+    public static String getCgroupStormHierarchyName(Map conf) {
+        return (String) conf.get(Config.STORM_CGROUP_HIERARCHY_NAME);
     }
 }
