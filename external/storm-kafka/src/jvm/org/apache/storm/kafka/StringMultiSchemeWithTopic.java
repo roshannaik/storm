@@ -29,7 +29,6 @@ import java.util.List;
 public class StringMultiSchemeWithTopic
         implements MultiScheme {
     public static final String STRING_SCHEME_KEY = "str";
-
     public static final String TOPIC_KEY = "topic";
 
     @Override

@@ -23,10 +23,16 @@
     </Console>
   </Appenders>
   <Loggers>
-    <Logger name="org.apache.zookeeper" level="WARN"/>
-    <Root level="info">
+    <Logger name="org.apache.zookeeper" level="OFF"/>
+    <Root level="OFF">
       <AppenderRef ref="Console"/>
     </Root>
+    <Logger name="org.apache.storm.kafka.spout.KafkaSpout" level="TRACE"/>
+    <Logger name="org.apache.storm.kafka.spout.test.KafkaSpoutTestBolt" level="TRACE"/>
+    <Logger name="org.apache.storm.kafka.spout.KafkaSpoutStreams" level="TRACE"/>
+    <Logger name="org.apache.storm.kafka.spout.KafkaSpoutTuplesBuilder" level="TRACE"/>
+    <Logger name="org.apache.storm.kafka.spout.KafkaSpoutRetryExponentialBackoff" level="TRACE"/>
+    <Logger name="org.apache.storm.kafka.spout.OffsetEntry" level="TRACE"/>
   </Loggers>
 </configuration>
 

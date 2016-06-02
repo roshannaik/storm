@@ -134,7 +134,6 @@
       <groupId>org.apache.storm</groupId>
       <artifactId>storm-kafka</artifactId>
       <version>${project.version}</version>
-      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.storm</groupId>
@@ -149,7 +148,7 @@
     <dependency>
       <groupId>org.apache.kafka</groupId>
       <artifactId>${kafka.artifact.id}</artifactId>
-      <scope>provided</scope>
+      <!--<scope>provided</scope>-->
     </dependency>
     <dependency>
       <groupId>org.apache.kafka</groupId>
@@ -160,6 +159,11 @@
       <artifactId>storm-redis</artifactId>
       <version>${project.version}</version>
     </dependency>
+      <dependency>
+          <groupId>org.apache.storm</groupId>
+          <artifactId>storm-kafka-client</artifactId>
+          <version>1.0.1</version>
+      </dependency>
   </dependencies>
 
   <build>
