@@ -1,0 +1,7 @@
+spout.count : 1
+bolt.count : 1
+kafka.topic : "kafka_hdfs"
+zk.uri : "c6401.ambari.apache.org:2181"
+hdfs.uri : "hdfs://c6401.ambari.apache.org:8020"
+hdfs.dir : "/tmp/storm"
+hdfs.batch : 1000
