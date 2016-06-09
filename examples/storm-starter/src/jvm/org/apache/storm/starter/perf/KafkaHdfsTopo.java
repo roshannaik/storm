@@ -147,7 +147,6 @@ public class KafkaHdfsTopo {
         Integer duration = Integer.parseInt(args[2]);     // in seconds
 
         StormSubmitter.submitTopologyWithProgressBar(TOPOLOGY_NAME, conf, getTopology(topoConf));
-        Nimbus.Client client = NimbusClient.getConfiguredClient(conf).getClient();
 
         // 2 - Print metrics every 60 sec, killAndExit topology after 30 min
         Helper.collectMetricsAndKill(TOPOLOGY_NAME, pollInterval, duration, conf);

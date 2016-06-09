@@ -33,6 +33,8 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.Utils;
 
+
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,12 +67,12 @@ public class NewKafkaSpoutNullBoltTopo {
 
     public static StormTopology getTopology(Map config) {
 
-        final int spoutNum = getInt(config, SPOUT_NUM, DEFAULT_SPOUT_NUM);
-        final int boltNum = getInt(config, BOLT_NUM, DEFAULT_BOLT_NUM);
+        final int spoutNum = Helper.getInt(config, SPOUT_NUM, DEFAULT_SPOUT_NUM);
+        final int boltNum = Helper.getInt(config, BOLT_NUM, DEFAULT_BOLT_NUM);
         // 1 -  Setup Kafka Spout   --------
         kafka.api.OffsetRequest.EarliestTime();
-        final String broker = getStr(config, KAFKA_BROKER);
-        final String topicName = getStr(config, KAFKA_TOPIC);
+        final String broker = Helper.getStr(config, KAFKA_BROKER);
+        final String topicName = Helper.getStr(config, KAFKA_TOPIC);
 
         Map<String, Object> kafkaConsumerProps = getKafkaConsumerProps(broker);
         Fields outputFields = new Fields(DATA, TOPIC);
@@ -79,6 +81,7 @@ public class NewKafkaSpoutNullBoltTopo {
 
         KafkaSpoutConfig kafkaSpoutConfig = new KafkaSpoutConfig.Builder<>(kafkaConsumerProps, kafkaSpoutStreams, tupleBuilder)
                 .setFirstPollOffsetStrategy(KafkaSpoutConfig.FirstPollOffsetStrategy.EARLIEST)
+                .setMaxUncommittedOffsets(100_000)
                 .build();
 
         KafkaSpout<String,String> kafkaSpout = new KafkaSpout<>(kafkaSpoutConfig);
@@ -102,16 +105,8 @@ public class NewKafkaSpoutNullBoltTopo {
         props.put(KafkaSpoutConfig.Consumer.BOOTSTRAP_SERVERS, broker);
         props.put(KafkaSpoutConfig.Consumer.KEY_DESERIALIZER, "org.apache.kafka.common.serialization.StringDeserializer");
         props.put(KafkaSpoutConfig.Consumer.VALUE_DESERIALIZER, "org.apache.kafka.common.serialization.StringDeserializer");
-        props.put(KafkaSpoutConfig.Consumer.GROUP_ID, "NewKafkaSpoutNullBoltTopo");
+        props.put(KafkaSpoutConfig.Consumer.GROUP_ID, "NewKafkaSpoutNullBoltTopo_"  + System.currentTimeMillis());
         return props;
-    }
-
-    public static int getInt(Map map, Object key, int def) {
-        return Utils.getInt(Utils.get(map, key, def));
-    }
-
-    public static String getStr(Map map, Object key) {
-        return (String) map.get(key);
     }
 
 

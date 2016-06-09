@@ -27,6 +27,8 @@ import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.utils.Utils;
 
+
+import java.io.File;
 import java.util.Map;
 
 public class FileReadWordCountTopo {
@@ -38,9 +40,9 @@ public class FileReadWordCountTopo {
     public static final String COUNT_NUM = "counter.count";
     public static final String INPUT_FILE = "input.file";
 
-    public static final int DEFAULT_SPOUT_NUM = 8;
-    public static final int DEFAULT_SPLIT_BOLT_NUM = 4;
-    public static final int DEFAULT_COUNT_BOLT_NUM = 4;
+    public static final int DEFAULT_SPOUT_NUM = 1;
+    public static final int DEFAULT_SPLIT_BOLT_NUM = 2;
+    public static final int DEFAULT_COUNT_BOLT_NUM = 2;
     public static final String TOPOLOGY_NAME = "FileReadWordCountTopo";
 
     public static StormTopology getTopology(Map config) {
@@ -58,23 +60,24 @@ public class FileReadWordCountTopo {
         return builder.createTopology();
     }
 
+    // args:  inputDataFile pollFreqSec durationSec
     public static void main(String[] args) throws Exception {
         if(args.length <= 0) {
             // submit topology to local cluster
             Config conf = new Config();
-            conf.put(INPUT_FILE, "/tmp/book.txt");
+            conf.put(INPUT_FILE, "/tmp/lines.txt");
             LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf));
             Thread.sleep(20000); // let run for a few seconds
             Helper.killAndExit(cluster, TOPOLOGY_NAME);
         } else {
-            String confFile = args[0];  // in seconds
+            String wordsFile = args[0];  // in seconds
             Integer pollInterval = Integer.parseInt(args[1]); // in seconds
             Integer duration = Integer.parseInt(args[2]);  // in seconds
 
             // submit to real cluster
             Map stormConf = Utils.readStormConfig();
-            stormConf.putAll(Utils.findAndReadConfigFile(confFile));
-            StormSubmitter.submitTopologyWithProgressBar(TOPOLOGY_NAME, stormConf, getTopology(stormConf) );
+            stormConf.put(INPUT_FILE,wordsFile);
+            StormSubmitter.submitTopology(TOPOLOGY_NAME, stormConf, getTopology(stormConf) );
             Helper.collectMetricsAndKill(TOPOLOGY_NAME, pollInterval, duration, stormConf);
         }
     }
