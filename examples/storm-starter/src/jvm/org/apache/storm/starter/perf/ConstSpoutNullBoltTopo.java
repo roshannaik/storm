@@ -56,7 +56,7 @@ public class ConstSpoutNullBoltTopo {
 
         builder.setSpout(SPOUT_ID, spout,  Helper.getInt(conf, SPOUT_COUNT, 1) );
         BoltDeclarer bd = builder.setBolt(BOLT_ID, bolt, Helper.getInt(conf, BOLT_COUNT, 1));
-        String groupingType = conf.get(GROUPING).toString();
+        String groupingType = Helper.getStr(conf, GROUPING);
         if(groupingType==null || groupingType.equalsIgnoreCase("local") )
             bd.localOrShuffleGrouping(SPOUT_ID);
         else if(groupingType.equalsIgnoreCase("shuffle") )

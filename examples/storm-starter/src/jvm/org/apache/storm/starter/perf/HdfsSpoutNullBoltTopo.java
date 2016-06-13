@@ -39,10 +39,6 @@ public class HdfsSpoutNullBoltTopo {
     public static final String SPOUT_NUM = "spout.count";
     public static final String BOLT_NUM = "bolt.count";
 
-    public static final String HDFS_SRC = "hdfs.src";
-    public static final String HDFS_DONE = "hdfs.done";
-    public static final String HDFS_BAD = "hdfs.bad";
-
 
     public static final int DEFAULT_SPOUT_NUM = 1;
     public static final int DEFAULT_BOLT_NUM = 1;
