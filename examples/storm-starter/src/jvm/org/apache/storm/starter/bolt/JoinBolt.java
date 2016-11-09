@@ -41,7 +41,6 @@ public class JoinBolt extends BaseWindowedBolt {
 
     private static final Logger LOG = LoggerFactory.getLogger(JoinBolt.class);
     private OutputCollector collector;
-    int count=0;
 
     ArrayList<String> streamJoinOrder = new ArrayList<>(); // order in which to join the streams
 
@@ -51,6 +50,7 @@ public class JoinBolt extends BaseWindowedBolt {
 
     // Map[StreamName -> JoinInfo]
     HashMap<String, JoinInfo> joinCriteria = new HashMap<>();
+    private String[] outputKeys;  // specified via bolt.select() ... used in declaring Output fields
 
     // Use streamId, source component name OR field in tuple to distinguish incoming tuple streams
     public enum  StreamSelector { STREAM, SOURCE_COMPONENT, FIELD }
@@ -91,35 +91,58 @@ public class JoinBolt extends BaseWindowedBolt {
         return join(streamId1, key, streamId2, key);
     }
 
+    /**
+     * Specifies the keys to include the output (i.e Projection)
+     *      e.g: .select("key1,key2,key3")
+     * @param commaSeparatedKeys
+     * @return
+     */
+    public JoinBolt select(String commaSeparatedKeys) {
+        String[] keyNames = commaSeparatedKeys.split(",");
+        outputKeys = new String[keyNames.length];
+        for (int i = 0; i < keyNames.length; i++) {
+            outputKeys[i] = keyNames[i].trim();
+        }
+        return this;
+    }
 
     @Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(new Fields("joined"));
+        declarer.declare(new Fields(outputKeys));
     }
 
     @Override
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
+        // initialize the hashedInputs data structure
+        for (int i = 1; i < streamJoinOrder.size(); i++) {
+            hashedInputs.put(streamJoinOrder.get(i),  new HashMap<Object, ArrayList<TupleImpl>>());
+        }
     }
 
     @Override
     public void execute(TupleWindow inputWindow) {
 
-        //1) Reset hashedInputs
-        for (int i = 1; i < streamJoinOrder.size(); i++) {
-            hashedInputs.put(streamJoinOrder.get(i),  new HashMap<Object, ArrayList<TupleImpl>>());
-        }
-
-        // 2) Perform Join
+        // 1) Perform Join
         List<Tuple> currentWindow = inputWindow.get();
-        JoinAccumulator joinResult = symmetricJoin(currentWindow);
-        result = doProjection(joinResult);
-        // 3) Emit results
-//        collector.emit(new Values());
+        JoinAccumulator joinResult = hashJoin(currentWindow);
+
+        // 2) Emit results
+        for (ResultRecord resultRecord : joinResult.getRecords()) {
+            ArrayList<Object> outputTuple = resultRecord.getOutputFields();
+            collector.emit( outputTuple );
+        }
     }
 
+    private void clearHashedInputs() {
+        for (HashMap<Object, ArrayList<TupleImpl>> mappings : hashedInputs.values()) {
+            mappings.clear();
+        }
+    }
 
-    private JoinAccumulator symmetricJoin(List<Tuple> tuples) {
+    private JoinAccumulator hashJoin(List<Tuple> tuples) {
+        clearHashedInputs();
+
         JoinAccumulator probe = new JoinAccumulator();
 
         // 1) Build phase - first stream's tuples go into probeInputs, rest into HashMaps in hashedInputs
@@ -132,29 +155,32 @@ public class JoinBolt extends BaseWindowedBolt {
                 ArrayList<TupleImpl> recs = hashedInputs.get(streamId).get(key);
                 if(recs == null) {
                     recs = new ArrayList<TupleImpl>();
+                    hashedInputs.get(streamId).put(key, recs);
                 }
                 recs.add(tuple);
-                hashedInputs.get(streamId).put(key, recs);
+
             }  else {
-                probe.insert(tuple);  // first stream's data goes into the probe
+                ResultRecord probeRecord = new ResultRecord(tuple, streamJoinOrder.size() > 1);
+                probe.insert( probeRecord );  // first stream's data goes into the probe
             }
         }
 
         // 2) Join the streams
         for (int i = 1; i < streamJoinOrder.size(); i++) {
             String streamName = streamJoinOrder.get(i) ;
-            probe = doJoin(probe, hashedInputs.get(streamName), joinCriteria.get(streamName) );
+            boolean finalJoin = (i==streamJoinOrder.size()-1);
+            probe = doJoin(probe, hashedInputs.get(streamName), joinCriteria.get(streamName), finalJoin );
         }
 
         return probe;
     }
 
     // Dispatches to the right join method based on the joinInfo.joinType
-    private JoinAccumulator doJoin(JoinAccumulator probe, HashMap<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo) {
+    private JoinAccumulator doJoin(JoinAccumulator probe, HashMap<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
         final JoinType joinType = joinInfo.getJoinType();
         switch ( joinType ) {
             case INNER:
-                return doInnerJoin(probe, buildInput, joinInfo);
+                return doInnerJoin(probe, buildInput, joinInfo, finalJoin);
             case LEFT:
             case RIGHT:
             case OUTER:
@@ -163,14 +189,14 @@ public class JoinBolt extends BaseWindowedBolt {
         }
     }
 
-    private JoinAccumulator doInnerJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl> > buildInput, JoinInfo joinInfo) {
+    private JoinAccumulator doInnerJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
         String probeKeyName = joinInfo.getOtherKeyName();
         JoinAccumulator result = new JoinAccumulator();
         for (ResultRecord rec : probe.getRecords()) {
             Object probeKey = rec.getField(joinInfo.otherStream, probeKeyName);
             if(probeKey!=null) {
                 ArrayList<TupleImpl> successfulJoin = buildInput.get(probeKey);
-                result.insert( new ResultRecord(rec, successfulJoin) );
+                result.insert( new ResultRecord(rec, successfulJoin, finalJoin) );
             }
         }
         return result;
@@ -239,23 +265,45 @@ public class JoinBolt extends BaseWindowedBolt {
     } // class JoinInfo
 
     // Join helper to concat fields to the record
-    private static class ResultRecord {
-        ArrayList<String> fieldNames = new ArrayList<>();
-        ArrayList<TupleImpl> tupleList = new ArrayList<>(); // one TupleImpl per Stream being joined
+    private class ResultRecord {
 
-        public ResultRecord(TupleImpl tuple) {
+        ArrayList<TupleImpl> tupleList = new ArrayList<>(); // contains one TupleImpl per Stream being joined
+        ArrayList<Object> outputFields = null; // refs to fields that will be part of output fields
+
+        // 'cacheOutputFields' enables us to avoid computing outfields unless it is the final stream being joined
+        public ResultRecord(TupleImpl tuple, boolean cacheOutputFields) {
             tupleList.add(tuple);
+            if(cacheOutputFields) {
+                outputFields = computeOutputFields(tupleList, outputKeys);
+            }
         }
 
-        public ResultRecord(ResultRecord lhs, ArrayList<TupleImpl> rhs) {
+        public ResultRecord(ResultRecord lhs, ArrayList<TupleImpl> rhs, boolean cacheOutputFields) {
             tupleList.addAll(lhs.tupleList);
             tupleList.addAll(rhs);
+            if(cacheOutputFields) {
+                outputFields = computeOutputFields(tupleList, outputKeys);
+            }
         }
 
-
-        public void concat(TupleImpl tuple) {
-            tupleList.add(tuple);
+        private ArrayList<Object> computeOutputFields(ArrayList<TupleImpl> tuples, String[] outKeys) {
+            ArrayList<Object> result = new ArrayList<>(outKeys.length);
+            // Todo: optimize this computation... perhaps inner loop should be outside to avoid rescanning tuples
+            for (int i = 0; i < outKeys.length; i++) {
+                for (TupleImpl tuple : tuples) {
+                    Object field = tuple.getValueByField(outKeys[i]);
+                    if(field!=null) {
+                        outputFields.add(field);
+                    }
+                }
+            }
+            return result;
         }
+
+        public ArrayList<Object> getOutputFields() {
+            return outputFields;
+        }
+
 
         public Object getField(String stream, String fieldName) {
             for (TupleImpl tuple : tupleList) {
@@ -266,7 +314,7 @@ public class JoinBolt extends BaseWindowedBolt {
         }
     }
 
-    private static class JoinAccumulator {
+    private class JoinAccumulator {
         ArrayList<ResultRecord> records = new ArrayList<>();
 
 //        public JoinAccumulator(ArrayList<TupleImpl> initialTuples) {
@@ -274,10 +322,6 @@ public class JoinBolt extends BaseWindowedBolt {
 //                records.add(new ResultRecord(tuple));
 //            }
 //        }
-        public void insert(TupleImpl tuple) {
-            records.add( new ResultRecord(tuple) );
-        }
-
         public void insert(ResultRecord tuple) {
             records.add( tuple );
         }
