@@ -91,6 +91,31 @@ public class JoinBolt extends BaseWindowedBolt {
         return join(streamId1, key, streamId2, key);
     }
 
+
+    /**
+     * Performs inner Join.  Equivalent SQL ..
+     *     inner join streamId1 on streamId1.key1=streamId2.key2
+     *
+     *  Note: streamId2 must be previously joined
+     *  Valid ex:    new JoinBolt(s1). join(s2,k2, s1,k1). join(s3,k3, s2,k2);
+     *  Invalid ex:  new JoinBolt(s1). join(s3,k3, s2,k2). join(s2,k2, s1,k1);
+     */
+    public JoinBolt leftJoin(String streamId1, String key1, String streamId2, String key2) {
+        hashedInputs.put(streamId1, new HashMap<Object, ArrayList<TupleImpl>>());
+        joinCriteria.put(streamId1, new JoinInfo(key1, streamId2, key2, JoinType.LEFT));
+        streamJoinOrder.add(streamId1);
+        return this;
+    }
+
+    /**
+     * Performs inner Join on same key name in both streams.  Equivalent SQL ..
+     *     inner join streamId1 on streamId1.key=streamId2.key
+     */
+    public JoinBolt leftJoin(String streamId1, String streamId2, String key) {
+        return leftJoin(streamId1, key, streamId2, key);
+    }
+
+
     /**
      * Specifies the keys to include the output (i.e Projection)
      *      e.g: .select("key1,key2,key3")
@@ -150,7 +175,7 @@ public class JoinBolt extends BaseWindowedBolt {
         for (Tuple t : tuples) {
             TupleImpl tuple = (TupleImpl) t;
             String streamId = getStreamSelector(tuple);
-            if( firstStream.equals(firstStream) ) {
+            if( ! streamId.equals(firstStream) ) {
                 Object key = getKey(streamId, tuple);
                 ArrayList<TupleImpl> recs = hashedInputs.get(streamId).get(key);
                 if(recs == null) {
@@ -160,7 +185,7 @@ public class JoinBolt extends BaseWindowedBolt {
                 recs.add(tuple);
 
             }  else {
-                ResultRecord probeRecord = new ResultRecord(tuple, streamJoinOrder.size() > 1);
+                ResultRecord probeRecord = new ResultRecord(tuple, streamJoinOrder.size() == 1);
                 probe.insert( probeRecord );  // first stream's data goes into the probe
             }
         }
@@ -175,13 +200,14 @@ public class JoinBolt extends BaseWindowedBolt {
         return probe;
     }
 
-    // Dispatches to the right join method based on the joinInfo.joinType
+    // Dispatches to the right join method (inner/left/right/outer) based on the joinInfo.joinType
     private JoinAccumulator doJoin(JoinAccumulator probe, HashMap<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
         final JoinType joinType = joinInfo.getJoinType();
         switch ( joinType ) {
             case INNER:
                 return doInnerJoin(probe, buildInput, joinInfo, finalJoin);
             case LEFT:
+                return doLeftJoin(probe, buildInput, joinInfo, finalJoin);
             case RIGHT:
             case OUTER:
             default:
@@ -189,18 +215,49 @@ public class JoinBolt extends BaseWindowedBolt {
         }
     }
 
+    // inner join - core implementation
     private JoinAccumulator doInnerJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
         String probeKeyName = joinInfo.getOtherKeyName();
         JoinAccumulator result = new JoinAccumulator();
         for (ResultRecord rec : probe.getRecords()) {
             Object probeKey = rec.getField(joinInfo.otherStream, probeKeyName);
             if(probeKey!=null) {
-                ArrayList<TupleImpl> successfulJoin = buildInput.get(probeKey);
-                result.insert( new ResultRecord(rec, successfulJoin, finalJoin) );
+                ArrayList<TupleImpl> matchingBuildRecs = buildInput.get(probeKey);
+                if(matchingBuildRecs!=null) {
+                    for (TupleImpl matchingRec : matchingBuildRecs) {
+                        ResultRecord mergedRecord = new ResultRecord(rec, matchingRec, finalJoin);
+                        result.insert(mergedRecord);
+                    }
+                }
             }
         }
         return result;
     }
+
+
+    // inner join - core implementation
+    private JoinAccumulator doLeftJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
+        String probeKeyName = joinInfo.getOtherKeyName();
+        JoinAccumulator result = new JoinAccumulator();
+        for (ResultRecord rec : probe.getRecords()) {
+            Object probeKey = rec.getField(joinInfo.otherStream, probeKeyName);
+            if(probeKey!=null) {
+                ArrayList<TupleImpl> matchingBuildRecs = buildInput.get(probeKey); // ok if its return null
+                if(matchingBuildRecs!=null && !matchingBuildRecs.isEmpty() ) {
+                    for (TupleImpl matchingRec : matchingBuildRecs) {
+                        ResultRecord mergedRecord = new ResultRecord(rec, matchingRec, finalJoin);
+                        result.insert(mergedRecord);
+                    }
+                } else {
+                    ResultRecord mergedRecord = new ResultRecord(rec, null, finalJoin);
+                    result.insert(mergedRecord);
+                }
+
+            }
+        }
+        return result;
+    }
+
 
 
     // identify the key for the stream, and look it up in 'tuple'
@@ -278,9 +335,11 @@ public class JoinBolt extends BaseWindowedBolt {
             }
         }
 
-        public ResultRecord(ResultRecord lhs, ArrayList<TupleImpl> rhs, boolean cacheOutputFields) {
-            tupleList.addAll(lhs.tupleList);
-            tupleList.addAll(rhs);
+        public ResultRecord(ResultRecord lhs, TupleImpl rhs, boolean cacheOutputFields) {
+            if(lhs!=null)
+                tupleList.addAll(lhs.tupleList);
+            if(rhs!=null)
+                tupleList.add(rhs);
             if(cacheOutputFields) {
                 outputFields = computeOutputFields(tupleList, outputKeys);
             }
@@ -289,11 +348,14 @@ public class JoinBolt extends BaseWindowedBolt {
         private ArrayList<Object> computeOutputFields(ArrayList<TupleImpl> tuples, String[] outKeys) {
             ArrayList<Object> result = new ArrayList<>(outKeys.length);
             // Todo: optimize this computation... perhaps inner loop should be outside to avoid rescanning tuples
-            for (int i = 0; i < outKeys.length; i++) {
-                for (TupleImpl tuple : tuples) {
-                    Object field = tuple.getValueByField(outKeys[i]);
-                    if(field!=null) {
-                        outputFields.add(field);
+            for ( int i = 0; i < outKeys.length; i++ ) {
+                for ( TupleImpl tuple : tuples ) {
+                    if( tuple.contains(outKeys[i]) ) {
+                        Object field = tuple.getValueByField(outKeys[i]);
+                        if (field != null) {
+                            result.add(field);
+                            break;
+                        }
                     }
                 }
             }
