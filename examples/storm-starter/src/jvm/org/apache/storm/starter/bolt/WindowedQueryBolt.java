@@ -37,9 +37,9 @@ import java.util.List;
 import java.util.Map;
 
 
-public class JoinBolt extends BaseWindowedBolt {
+public class WindowedQueryBolt extends BaseWindowedBolt {
 
-    private static final Logger LOG = LoggerFactory.getLogger(JoinBolt.class);
+    private static final Logger LOG = LoggerFactory.getLogger(WindowedQueryBolt.class);
     private OutputCollector collector;
 
     ArrayList<String> streamJoinOrder = new ArrayList<>(); // order in which to join the streams
@@ -60,7 +60,7 @@ public class JoinBolt extends BaseWindowedBolt {
      * StreamId to start the join with. Equivalent SQL ...
      *       select .... from streamId ...
      */
-    public JoinBolt(StreamSelector type, String streamId) {
+    public WindowedQueryBolt(StreamSelector type, String streamId) {
         // todo: support other types of stream selectors
         if( type!=StreamSelector.STREAM )
             throw new IllegalArgumentException(type.name());
@@ -73,10 +73,10 @@ public class JoinBolt extends BaseWindowedBolt {
      *     inner join streamId1 on streamId1.key1=streamId2.key2
      *
      *  Note: streamId2 must be previously joined
-     *  Valid ex:    new JoinBolt(s1). join(s2,k2, s1,k1). join(s3,k3, s2,k2);
-     *  Invalid ex:  new JoinBolt(s1). join(s3,k3, s2,k2). join(s2,k2, s1,k1);
+     *  Valid ex:    new WindowedQueryBolt(s1). join(s2,k2, s1,k1). join(s3,k3, s2,k2);
+     *  Invalid ex:  new WindowedQueryBolt(s1). join(s3,k3, s2,k2). join(s2,k2, s1,k1);
      */
-    public JoinBolt join(String streamId1, String key1, String streamId2, String key2) {
+    public WindowedQueryBolt join(String streamId1, String key1, String streamId2, String key2) {
         hashedInputs.put(streamId1, new HashMap<Object, ArrayList<TupleImpl>>());
         joinCriteria.put(streamId1, new JoinInfo(key1, streamId2, key2, JoinType.INNER));
         streamJoinOrder.add(streamId1);
@@ -87,7 +87,7 @@ public class JoinBolt extends BaseWindowedBolt {
      * Performs inner Join on same key name in both streams.  Equivalent SQL ..
      *     inner join streamId1 on streamId1.key=streamId2.key
      */
-    public JoinBolt join(String streamId1, String streamId2, String key) {
+    public WindowedQueryBolt join(String streamId1, String streamId2, String key) {
         return join(streamId1, key, streamId2, key);
     }
 
@@ -97,10 +97,10 @@ public class JoinBolt extends BaseWindowedBolt {
      *     inner join streamId1 on streamId1.key1=streamId2.key2
      *
      *  Note: streamId2 must be previously joined
-     *  Valid ex:    new JoinBolt(s1). join(s2,k2, s1,k1). join(s3,k3, s2,k2);
-     *  Invalid ex:  new JoinBolt(s1). join(s3,k3, s2,k2). join(s2,k2, s1,k1);
+     *  Valid ex:    new WindowedQueryBolt(s1). join(s2,k2, s1,k1). join(s3,k3, s2,k2);
+     *  Invalid ex:  new WindowedQueryBolt(s1). join(s3,k3, s2,k2). join(s2,k2, s1,k1);
      */
-    public JoinBolt leftJoin(String streamId1, String key1, String streamId2, String key2) {
+    public WindowedQueryBolt leftJoin(String streamId1, String key1, String streamId2, String key2) {
         hashedInputs.put(streamId1, new HashMap<Object, ArrayList<TupleImpl>>());
         joinCriteria.put(streamId1, new JoinInfo(key1, streamId2, key2, JoinType.LEFT));
         streamJoinOrder.add(streamId1);
@@ -111,7 +111,7 @@ public class JoinBolt extends BaseWindowedBolt {
      * Performs inner Join on same key name in both streams.  Equivalent SQL ..
      *     inner join streamId1 on streamId1.key=streamId2.key
      */
-    public JoinBolt leftJoin(String streamId1, String streamId2, String key) {
+    public WindowedQueryBolt leftJoin(String streamId1, String streamId2, String key) {
         return leftJoin(streamId1, key, streamId2, key);
     }
 
@@ -119,10 +119,11 @@ public class JoinBolt extends BaseWindowedBolt {
     /**
      * Specifies the keys to include the output (i.e Projection)
      *      e.g: .select("key1,key2,key3")
+     * This automatically defines the output fieldNames for the bolt based on the selected fields.
      * @param commaSeparatedKeys
      * @return
      */
-    public JoinBolt select(String commaSeparatedKeys) {
+    public WindowedQueryBolt select(String commaSeparatedKeys) {
         String[] keyNames = commaSeparatedKeys.split(",");
         outputKeys = new String[keyNames.length];
         for (int i = 0; i < keyNames.length; i++) {
@@ -142,6 +143,9 @@ public class JoinBolt extends BaseWindowedBolt {
         // initialize the hashedInputs data structure
         for (int i = 1; i < streamJoinOrder.size(); i++) {
             hashedInputs.put(streamJoinOrder.get(i),  new HashMap<Object, ArrayList<TupleImpl>>());
+        }
+        if(outputKeys==null) {
+            throw new IllegalArgumentException("Must specify output fields via .select() method.");
         }
     }
 
@@ -234,8 +238,7 @@ public class JoinBolt extends BaseWindowedBolt {
         return result;
     }
 
-
-    // inner join - core implementation
+    // left join - core implementation
     private JoinAccumulator doLeftJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
         String probeKeyName = joinInfo.getOtherKeyName();
         JoinAccumulator result = new JoinAccumulator();
@@ -259,6 +262,28 @@ public class JoinBolt extends BaseWindowedBolt {
     }
 
 
+    // right join - core implementation
+    private JoinAccumulator doRightJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
+        String probeKeyName = joinInfo.getOtherKeyName();
+        JoinAccumulator result = new JoinAccumulator();
+        for (ResultRecord rec : probe.getRecords()) {
+            Object probeKey = rec.getField(joinInfo.otherStream, probeKeyName);
+            if(probeKey!=null) {
+                ArrayList<TupleImpl> matchingBuildRecs = buildInput.get(probeKey); // ok if its return null
+                if(matchingBuildRecs!=null && !matchingBuildRecs.isEmpty() ) {
+                    for (TupleImpl matchingRec : matchingBuildRecs) {
+                        ResultRecord mergedRecord = new ResultRecord(rec, matchingRec, finalJoin);
+                        result.insert(mergedRecord);
+                    }
+                } else {
+                    ResultRecord mergedRecord = new ResultRecord(rec, null, finalJoin);
+                    result.insert(mergedRecord);
+                }
+
+            }
+        }
+        return result;
+    }
 
     // identify the key for the stream, and look it up in 'tuple'
     private Object getKey(String streamId, TupleImpl tuple) {
@@ -279,7 +304,7 @@ public class JoinBolt extends BaseWindowedBolt {
     }
 
     public static void main(String[] args) {
-        new JoinBolt(StreamSelector.STREAM, "s0" )
+        new WindowedQueryBolt(StreamSelector.STREAM, "s0" )
                       .join("s1", "k1", "s2", "k2");
 //                      .join("s3");
     }

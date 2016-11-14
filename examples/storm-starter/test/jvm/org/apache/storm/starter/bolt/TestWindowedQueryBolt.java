@@ -18,7 +18,6 @@
 
 package org.apache.storm.starter.bolt;
 
-import org.apache.storm.generated.StormTopology;
 import org.apache.storm.task.GeneralTopologyContext;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.tuple.Fields;
@@ -33,21 +32,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 
-public class TestJoinBolt {
+public class TestWindowedQueryBolt {
     String[] userFields = {"userId", "name", "city"};
     Object[][] users = {
             {1, "roshan", "san jose"},
             {2, "harsha", "santa clara"},
-            {3, "siva", "dublin" },
-            {4, "hugo", "san mateo" },
+            {3, "siva",   "dublin" },
+            {4, "hugo",   "san mateo" },
             {5, "suresh", "sunnyvale" },
-            {6, "guru", "palo alto" },
-            {7, "arun", "bengaluru"},
+            {6, "guru",   "palo alto" },
+            {7, "arun",   "bengaluru"},
             {8, "satish", "mumbai"},
-            {9, "mani", "chennai"}
+            {9, "mani",   "chennai"}
     };
 
     String[] orderFields = {"orderId", "userId", "itemId", "price"};
@@ -64,13 +62,33 @@ public class TestJoinBolt {
             {19, 8, 29, 9}
     };
 
+
+    @Test
+    public void testTrivial() throws Exception {
+        ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
+        TupleWindow window = makeTupleWindow(orderStream);
+
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "orders")
+                .select("orderId,userId,itemId,price");
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+        bolt.execute(window);
+        for (List<Object> rec : collector.actualResults) {
+            for (Object field : rec) {
+                System.out.print(field + ",");
+            }
+            System.out.println("");
+        }
+        Assert.assertEquals( orderStream.size(), collector.actualResults.size() );
+    }
+
     @Test
     public void testInnerJoin() throws Exception {
         ArrayList<Tuple> userStream = makeStream("users", userFields, users);
         ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
         TupleWindow window = makeTupleWindow(orderStream, userStream);
 
-        JoinBolt bolt = new JoinBolt(JoinBolt.StreamSelector.STREAM, "users")
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users")
                 .join("orders", "users", "userId")
                 .select("userId,name,price");
 
@@ -92,7 +110,7 @@ public class TestJoinBolt {
         ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
         TupleWindow window = makeTupleWindow(orderStream, userStream);
 
-        JoinBolt bolt = new JoinBolt(JoinBolt.StreamSelector.STREAM, "users")
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users")
                 .leftJoin("orders", "users", "userId")
                 .select("userId,name,price");
 
@@ -109,9 +127,14 @@ public class TestJoinBolt {
     }
 
 
-    private TupleWindow makeTupleWindow(ArrayList<Tuple> orderStream, ArrayList<Tuple> userStream) {
-        ArrayList<Tuple> combined = new ArrayList<>(orderStream);
-        combined.addAll(userStream);
+    private TupleWindow makeTupleWindow(ArrayList<Tuple> stream) {
+        return new TupleWindowImpl(stream, null, null);
+    }
+
+
+    private TupleWindow makeTupleWindow(ArrayList<Tuple> stream1, ArrayList<Tuple> stream2) {
+        ArrayList<Tuple> combined = new ArrayList<>(stream1);
+        combined.addAll(stream2);
         Collections.shuffle(combined);
         return new TupleWindowImpl(combined, null, null);
     }
