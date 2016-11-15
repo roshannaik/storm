@@ -171,7 +171,7 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
             TupleImpl tuple = (TupleImpl) t;
             String streamId = getStreamSelector(tuple);
             if( ! streamId.equals(firstStream) ) {
-                Object key = getKey(streamId, tuple);
+                Object key = getKeyField(streamId, tuple);
                 ArrayList<TupleImpl> recs = hashedInputs.get(streamId).get(key);
                 if(recs == null) {
                     recs = new ArrayList<TupleImpl>();
@@ -212,7 +212,7 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
 
     // inner join - core implementation
     private JoinAccumulator doInnerJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
-        String probeKeyName = joinInfo.getOtherKeyName();
+        String[] probeKeyName = joinInfo.getOtherKey();
         JoinAccumulator result = new JoinAccumulator();
         for (ResultRecord rec : probe.getRecords()) {
             Object probeKey = rec.getField(joinInfo.otherStream, probeKeyName);
@@ -231,7 +231,7 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
 
     // left join - core implementation
     private JoinAccumulator doLeftJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
-        String probeKeyName = joinInfo.getOtherKeyName();
+        String[] probeKeyName = joinInfo.getOtherKey();
         JoinAccumulator result = new JoinAccumulator();
         for (ResultRecord rec : probe.getRecords()) {
             Object probeKey = rec.getField(joinInfo.otherStream, probeKeyName);
@@ -253,33 +253,21 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     }
 
 
-    // right join - core implementation
-    private JoinAccumulator doRightJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
-        String probeKeyName = joinInfo.getOtherKeyName();
-        JoinAccumulator result = new JoinAccumulator();
-        for (ResultRecord rec : probe.getRecords()) {
-            Object probeKey = rec.getField(joinInfo.otherStream, probeKeyName);
-            if(probeKey!=null) {
-                ArrayList<TupleImpl> matchingBuildRecs = buildInput.get(probeKey); // ok if its return null
-                if(matchingBuildRecs!=null && !matchingBuildRecs.isEmpty() ) {
-                    for (TupleImpl matchingRec : matchingBuildRecs) {
-                        ResultRecord mergedRecord = new ResultRecord(rec, matchingRec, finalJoin);
-                        result.insert(mergedRecord);
-                    }
-                } else {
-                    ResultRecord mergedRecord = new ResultRecord(rec, null, finalJoin);
-                    result.insert(mergedRecord);
-                }
-
-            }
-        }
-        return result;
+    // Identify the key for the stream, and look it up in 'tuple'. key can be nested key:  outerKey.innerKey
+    private Object getKeyField(String streamId, TupleImpl tuple) {
+        String[] nestedKeyName = joinCriteria.get(streamId).getNestedKeyName();
+        return getNestedField(nestedKeyName, tuple);
     }
 
-    // identify the key for the stream, and look it up in 'tuple'
-    private Object getKey(String streamId, TupleImpl tuple) {
-        String keyName = joinCriteria.get(streamId).getKeyName();
-        return tuple.getValueByField(keyName);
+    private static Object getNestedField(String[] nestedKeyName, TupleImpl tuple) {
+        Object curr = null;
+        for (int i = 0; i < nestedKeyName.length; i++) {
+            if(i==0)
+                curr = tuple.getValueByField(nestedKeyName[i]);
+            else if(i<nestedKeyName.length-1)
+               curr = ((Map) curr).get(nestedKeyName[i]);
+        }
+        return curr;
     }
 
 
@@ -294,12 +282,6 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
         }
     }
 
-    public static void main(String[] args) {
-        new WindowedQueryBolt(StreamSelector.STREAM, "s0", "k0")
-                      .join("s1", "k1", "s0");
-//                      .join("s3");
-    }
-
 
     private enum JoinType {INNER, LEFT, RIGHT, OUTER}
 
@@ -307,34 +289,34 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     private static class JoinInfo implements Serializable {
         final static long serialVersionUID = 1L;
 
-        String keyName;         // key of the current stream
-        String otherStream;     // name of the other stream to join with
-        String otherKeyName;    // key name from the other stream - cached here to avoid 2nd lookup into joinCriteria to find otherKey during execution
-        JoinType joinType;      // nature of join
+        String[] nestedKeyName;    // nested  key name for the current stream:  outer.inner -> { "outer", "inner }
+        String   otherStream;      // name of the other stream to join with
+        String[] otherKey;         // key name of the other stream
+        JoinType joinType;         // nature of join
 
-        public JoinInfo(String key) {
-            this.keyName = key;
+        public JoinInfo(String nestedKey) {
+            this.nestedKeyName = nestedKey.split("\\.");
             this.otherStream = null;
-            this.otherKeyName = null;
+            this.otherKey = null;
             this.joinType = null;
         }
-        public JoinInfo(String key, String otherStream, JoinInfo otherStreamJoinInfo,  JoinType joinType) {
-            this.keyName = key;
+        public JoinInfo(String nestedKey, String otherStream, JoinInfo otherStreamJoinInfo,  JoinType joinType) {
+            this.nestedKeyName = nestedKey.split("\\.");
             this.otherStream = otherStream;
-            this.otherKeyName = otherStreamJoinInfo.keyName;
+            this.otherKey = otherStreamJoinInfo.nestedKeyName;
             this.joinType = joinType;
         }
 
-        public String getKeyName() {
-            return keyName;
+        public String[] getNestedKeyName() {
+            return nestedKeyName;
         }
 
         public String getOtherStream() {
             return otherStream;
         }
 
-        public String getOtherKeyName() {
-            return otherKeyName;
+        public String[] getOtherKey() {
+            return otherKey;
         }
 
         public JoinType getJoinType() {
@@ -388,14 +370,14 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
             return outputFields;
         }
 
-
-        public Object getField(String stream, String fieldName) {
+        public Object getField(String stream, String[] nestedFieldName) {
             for (TupleImpl tuple : tupleList) {
                 if(tuple.getSourceStreamId().equals(stream))
-                    return tuple.getValueByField(fieldName);
+                    return getNestedField(nestedFieldName, tuple);
             }
             return null;
         }
+
     }
 
     private class JoinAccumulator {
