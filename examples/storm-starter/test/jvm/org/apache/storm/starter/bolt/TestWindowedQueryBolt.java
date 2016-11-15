@@ -68,7 +68,7 @@ public class TestWindowedQueryBolt {
         ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
         TupleWindow window = makeTupleWindow(orderStream);
 
-        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "orders")
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "orders", orderFields[0])
                 .select("orderId,userId,itemId,price");
         MockCollector collector = new MockCollector();
         bolt.prepare(null, null, collector);
@@ -88,8 +88,8 @@ public class TestWindowedQueryBolt {
         ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
         TupleWindow window = makeTupleWindow(orderStream, userStream);
 
-        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users")
-                .join("orders", "users", "userId")
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users", userFields[0])
+                .join("orders", "userId", "users")
                 .select("userId,name,price");
 
         MockCollector collector = new MockCollector();
@@ -110,8 +110,8 @@ public class TestWindowedQueryBolt {
         ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
         TupleWindow window = makeTupleWindow(orderStream, userStream);
 
-        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users")
-                .leftJoin("orders", "users", "userId")
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users", userFields[0])
+                .leftJoin("orders", "userId", "users")
                 .select("userId,name,price");
 
         MockCollector collector = new MockCollector();
@@ -140,7 +140,6 @@ public class TestWindowedQueryBolt {
     }
 
     private ArrayList<Tuple> makeStream(String streamName, String[] fieldNames, Object[][] data) {
-
         ArrayList<Tuple> result = new ArrayList<>();
         MockContext mockContext = new MockContext(fieldNames);
 

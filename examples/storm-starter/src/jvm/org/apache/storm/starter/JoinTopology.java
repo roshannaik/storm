@@ -19,22 +19,19 @@
 package org.apache.storm.starter;
 
 import org.apache.storm.Config;
-import org.apache.storm.LocalCluster;
 import org.apache.storm.StormSubmitter;
-import org.apache.storm.starter.bolt.JoinBolt;
+import org.apache.storm.starter.bolt.WindowedQueryBolt;
 import org.apache.storm.starter.bolt.PrinterBolt;
-import org.apache.storm.starter.bolt.SlidingWindowSumBolt;
 import org.apache.storm.starter.spout.RandomIntegerSpout;
 import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.topology.base.BaseWindowedBolt;
-import org.apache.storm.utils.Utils;
 
 import java.util.concurrent.TimeUnit;
 
 public class JoinTopology {
     public static void main(String[] args) throws Exception {
         TopologyBuilder builder = new TopologyBuilder();
-        BaseWindowedBolt bolt = new JoinBolt(JoinBolt.StreamSelector.STREAM, "stream1")
+        BaseWindowedBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "stream1", "key1")
                 .withWindow(new BaseWindowedBolt.Duration(5, TimeUnit.SECONDS), new BaseWindowedBolt.Duration(3, TimeUnit.SECONDS))
                 .withTimestampField("ts")
                 .withLag(new BaseWindowedBolt.Duration(5, TimeUnit.SECONDS));
@@ -48,11 +45,11 @@ public class JoinTopology {
             conf.setNumWorkers(1);
             StormSubmitter.submitTopologyWithProgressBar(args[0], conf, builder.createTopology());
         } else {
-            LocalCluster cluster = new LocalCluster();
-            cluster.submitTopology("test", conf, builder.createTopology());
-            Utils.sleep(40000);
-            cluster.killTopology("test");
-            cluster.shutdown();
+//            LocalCluster cluster = new LocalCluster();
+//            cluster.submitTopology("test", conf, builder.createTopology());
+//            Utils.sleep(40000);
+//            cluster.killTopology("test");
+//            cluster.shutdown();
         }
     }
 }

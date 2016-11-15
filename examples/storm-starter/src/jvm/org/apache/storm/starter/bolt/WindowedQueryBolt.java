@@ -60,35 +60,31 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
      * StreamId to start the join with. Equivalent SQL ...
      *       select .... from streamId ...
      */
-    public WindowedQueryBolt(StreamSelector type, String streamId) {
+    public WindowedQueryBolt(StreamSelector type, String streamId, String key) {
         // todo: support other types of stream selectors
         if( type!=StreamSelector.STREAM )
             throw new IllegalArgumentException(type.name());
         streamSelectorType = type;
         streamJoinOrder.add(streamId);
+        joinCriteria.put(streamId, new JoinInfo(key) );
     }
 
     /**
      * Performs inner Join.  Equivalent SQL ..
-     *     inner join streamId1 on streamId1.key1=streamId2.key2
+     *     inner join streamId1 on streamId1.key = streamId2.key
      *
-     *  Note: streamId2 must be previously joined
-     *  Valid ex:    new WindowedQueryBolt(s1). join(s2,k2, s1,k1). join(s3,k3, s2,k2);
-     *  Invalid ex:  new WindowedQueryBolt(s1). join(s3,k3, s2,k2). join(s2,k2, s1,k1);
+     *  Note: priorStream must be previously joined.
+     *    Valid ex:    new WindowedQueryBolt(s1,k1). join(s2,k2, s1). join(s3,k3, s2);
+     *    Invalid ex:  new WindowedQueryBolt(s1,k1). join(s3,k3, s2). join(s2,k2, s1);
      */
-    public WindowedQueryBolt join(String streamId1, String key1, String streamId2, String key2) {
-        hashedInputs.put(streamId1, new HashMap<Object, ArrayList<TupleImpl>>());
-        joinCriteria.put(streamId1, new JoinInfo(key1, streamId2, key2, JoinType.INNER));
-        streamJoinOrder.add(streamId1);
+    public WindowedQueryBolt join(String newStream, String newStreamKey, String priorStream) {
+        hashedInputs.put(newStream, new HashMap<Object, ArrayList<TupleImpl>>());
+        JoinInfo joinInfo = joinCriteria.get(priorStream);
+        if( joinInfo==null )
+            throw new IllegalArgumentException("Stream '" + priorStream + "' was not previously declared");
+        joinCriteria.put(newStream, new JoinInfo(newStreamKey, priorStream, joinInfo, JoinType.INNER) );
+        streamJoinOrder.add(newStream);
         return this;
-    }
-
-    /**
-     * Performs inner Join on same key name in both streams.  Equivalent SQL ..
-     *     inner join streamId1 on streamId1.key=streamId2.key
-     */
-    public WindowedQueryBolt join(String streamId1, String streamId2, String key) {
-        return join(streamId1, key, streamId2, key);
     }
 
 
@@ -96,23 +92,18 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
      * Performs inner Join.  Equivalent SQL ..
      *     inner join streamId1 on streamId1.key1=streamId2.key2
      *
-     *  Note: streamId2 must be previously joined
-     *  Valid ex:    new WindowedQueryBolt(s1). join(s2,k2, s1,k1). join(s3,k3, s2,k2);
-     *  Invalid ex:  new WindowedQueryBolt(s1). join(s3,k3, s2,k2). join(s2,k2, s1,k1);
+     *  Note: priorStream must be previously joined
+     *    Valid ex:    new WindowedQueryBolt(s1,k1). join(s2,k2, s1). join(s3,k3, s2);
+     *    Invalid ex:  new WindowedQueryBolt(s1,k1). join(s3,k3, s2). join(s2,k2, s1);
      */
-    public WindowedQueryBolt leftJoin(String streamId1, String key1, String streamId2, String key2) {
-        hashedInputs.put(streamId1, new HashMap<Object, ArrayList<TupleImpl>>());
-        joinCriteria.put(streamId1, new JoinInfo(key1, streamId2, key2, JoinType.LEFT));
-        streamJoinOrder.add(streamId1);
+    public WindowedQueryBolt leftJoin(String newStream, String newStreamKey, String priorStream) {
+        hashedInputs.put(newStream, new HashMap<Object, ArrayList<TupleImpl>>());
+        JoinInfo joinInfo = joinCriteria.get(priorStream);
+        if( joinInfo==null )
+            throw new IllegalArgumentException("Stream '" + priorStream + "' was not previously declared");
+        joinCriteria.put(newStream, new JoinInfo(newStreamKey, priorStream, joinInfo, JoinType.LEFT));
+        streamJoinOrder.add(newStream);
         return this;
-    }
-
-    /**
-     * Performs inner Join on same key name in both streams.  Equivalent SQL ..
-     *     inner join streamId1 on streamId1.key=streamId2.key
-     */
-    public WindowedQueryBolt leftJoin(String streamId1, String streamId2, String key) {
-        return leftJoin(streamId1, key, streamId2, key);
     }
 
 
@@ -304,8 +295,8 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     }
 
     public static void main(String[] args) {
-        new WindowedQueryBolt(StreamSelector.STREAM, "s0" )
-                      .join("s1", "k1", "s2", "k2");
+        new WindowedQueryBolt(StreamSelector.STREAM, "s0", "k0")
+                      .join("s1", "k1", "s0");
 //                      .join("s3");
     }
 
@@ -316,15 +307,21 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     private static class JoinInfo implements Serializable {
         final static long serialVersionUID = 1L;
 
-        String keyName;          // key of the current stream
-        String otherStream;  // name of the other stream to join with
-        String otherKeyName;     // key name from the other stream
-        JoinType joinType;   // nature of join
+        String keyName;         // key of the current stream
+        String otherStream;     // name of the other stream to join with
+        String otherKeyName;    // key name from the other stream - cached here to avoid 2nd lookup into joinCriteria to find otherKey during execution
+        JoinType joinType;      // nature of join
 
-        public JoinInfo(String key, String otherStream, String otherKey, JoinType joinType) {
+        public JoinInfo(String key) {
+            this.keyName = key;
+            this.otherStream = null;
+            this.otherKeyName = null;
+            this.joinType = null;
+        }
+        public JoinInfo(String key, String otherStream, JoinInfo otherStreamJoinInfo,  JoinType joinType) {
             this.keyName = key;
             this.otherStream = otherStream;
-            this.otherKeyName = otherKey;
+            this.otherKeyName = otherStreamJoinInfo.keyName;
             this.joinType = joinType;
         }
 
