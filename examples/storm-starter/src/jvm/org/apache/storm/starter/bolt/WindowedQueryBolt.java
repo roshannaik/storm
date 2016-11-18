@@ -50,11 +50,14 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
 
     // Map[StreamName -> JoinInfo]
     HashMap<String, JoinInfo> joinCriteria = new HashMap<>();
-    private String[] outputKeys;  // specified via bolt.select() ... used in declaring Output fields
+    private String[][] outputKeys;  // specified via bolt.select() ... used in declaring Output fields
+    private String[] dotSeparatedOutputKeyNames; // used for naming output fields
 
     // Use streamId, source component name OR field in tuple to distinguish incoming tuple streams
-    public enum  StreamSelector { STREAM, SOURCE_COMPONENT, FIELD }
+    public enum  StreamSelector { STREAM, SOURCE_COMPONENT }
     private final StreamSelector streamSelectorType;
+
+
 
     /**
      * StreamId to start the join with. Equivalent SQL ...
@@ -62,7 +65,7 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
      */
     public WindowedQueryBolt(StreamSelector type, String streamId, String key) {
         // todo: support other types of stream selectors
-        if( type!=StreamSelector.STREAM )
+        if( type!=StreamSelector.STREAM && type!=StreamSelector.SOURCE_COMPONENT )
             throw new IllegalArgumentException(type.name());
         streamSelectorType = type;
         streamJoinOrder.add(streamId);
@@ -70,62 +73,69 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     }
 
     /**
-     * Performs inner Join.  Equivalent SQL ..
-     *     inner join streamId1 on streamId1.key = streamId2.key
+     * Performs inner Join.
+     *  SQL    :   from priorStream inner join stream on stream.key = priorStream.key1
+     *  same as:   new WindowedQueryBolt(priorStream,key1). join(stream, key, priorStream);
      *
      *  Note: priorStream must be previously joined.
      *    Valid ex:    new WindowedQueryBolt(s1,k1). join(s2,k2, s1). join(s3,k3, s2);
      *    Invalid ex:  new WindowedQueryBolt(s1,k1). join(s3,k3, s2). join(s2,k2, s1);
      */
-    public WindowedQueryBolt join(String newStream, String newStreamKey, String priorStream) {
-        hashedInputs.put(newStream, new HashMap<Object, ArrayList<TupleImpl>>());
+    public WindowedQueryBolt join(String stream, String key, String priorStream) {
+        hashedInputs.put(stream, new HashMap<Object, ArrayList<TupleImpl>>());
         JoinInfo joinInfo = joinCriteria.get(priorStream);
         if( joinInfo==null )
             throw new IllegalArgumentException("Stream '" + priorStream + "' was not previously declared");
-        joinCriteria.put(newStream, new JoinInfo(newStreamKey, priorStream, joinInfo, JoinType.INNER) );
-        streamJoinOrder.add(newStream);
+        joinCriteria.put(stream, new JoinInfo(key, priorStream, joinInfo, JoinType.INNER) );
+        streamJoinOrder.add(stream);
         return this;
     }
 
 
     /**
-     * Performs inner Join.  Equivalent SQL ..
-     *     inner join streamId1 on streamId1.key1=streamId2.key2
+     * Performs left Join.
+     *  SQL    :   from stream1  left join stream2  on stream2.key = stream1.key1
+     *  same as:   new  WindowedQueryBolt(stream1, key1). leftJoin(stream2, key, stream1);
      *
      *  Note: priorStream must be previously joined
-     *    Valid ex:    new WindowedQueryBolt(s1,k1). join(s2,k2, s1). join(s3,k3, s2);
-     *    Invalid ex:  new WindowedQueryBolt(s1,k1). join(s3,k3, s2). join(s2,k2, s1);
+     *    Valid ex:    new WindowedQueryBolt(s1,k1). leftJoin(s2,k2, s1). leftJoin(s3,k3, s2);
+     *    Invalid ex:  new WindowedQueryBolt(s1,k1). leftJoin(s3,k3, s2). leftJoin(s2,k2, s1);
      */
-    public WindowedQueryBolt leftJoin(String newStream, String newStreamKey, String priorStream) {
-        hashedInputs.put(newStream, new HashMap<Object, ArrayList<TupleImpl>>());
+    public WindowedQueryBolt leftJoin(String stream, String key, String priorStream) {
+        hashedInputs.put(stream, new HashMap<Object, ArrayList<TupleImpl>>());
         JoinInfo joinInfo = joinCriteria.get(priorStream);
         if( joinInfo==null )
             throw new IllegalArgumentException("Stream '" + priorStream + "' was not previously declared");
-        joinCriteria.put(newStream, new JoinInfo(newStreamKey, priorStream, joinInfo, JoinType.LEFT));
-        streamJoinOrder.add(newStream);
+        joinCriteria.put(stream, new JoinInfo(key, priorStream, joinInfo, JoinType.LEFT));
+        streamJoinOrder.add(stream);
         return this;
     }
 
 
     /**
-     * Specifies the keys to include the output (i.e Projection)
-     *      e.g: .select("key1,key2,key3")
-     * This automatically defines the output fieldNames for the bolt based on the selected fields.
+     * Performs projection. i.e. Specifies the keys to include in the output.
+     *      e.g: .select("key1, key2, key3")
+     * Nested Key names are supported for nested types:
+     *      e.g: .select("outerKey1.innerKey1, outerKey1.innerKey2, outerKey2.innerKey3)"
+     * Inner types (non leaf) must be Map<> in order to support lookup by keyname
+     * This selected keys implicitly declare the output fieldNames for the bolt based.
      * @param commaSeparatedKeys
      * @return
      */
     public WindowedQueryBolt select(String commaSeparatedKeys) {
         String[] keyNames = commaSeparatedKeys.split(",");
-        outputKeys = new String[keyNames.length];
+        dotSeparatedOutputKeyNames = new String[keyNames.length];
+        outputKeys = new String[keyNames.length][];
         for (int i = 0; i < keyNames.length; i++) {
-            outputKeys[i] = keyNames[i].trim();
+            dotSeparatedOutputKeyNames[i] = keyNames[i].trim();
+            outputKeys[i] = dotSeparatedOutputKeyNames[i].split("\\.");
         }
         return this;
     }
 
     @Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(new Fields(outputKeys));
+        declarer.declare(new Fields(dotSeparatedOutputKeyNames));
     }
 
     @Override
@@ -160,7 +170,7 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
         }
     }
 
-    private JoinAccumulator hashJoin(List<Tuple> tuples) {
+    protected JoinAccumulator hashJoin(List<Tuple> tuples) {
         clearHashedInputs();
 
         JoinAccumulator probe = new JoinAccumulator();
@@ -196,7 +206,7 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     }
 
     // Dispatches to the right join method (inner/left/right/outer) based on the joinInfo.joinType
-    private JoinAccumulator doJoin(JoinAccumulator probe, HashMap<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
+    protected JoinAccumulator doJoin(JoinAccumulator probe, HashMap<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
         final JoinType joinType = joinInfo.getJoinType();
         switch ( joinType ) {
             case INNER:
@@ -211,7 +221,7 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     }
 
     // inner join - core implementation
-    private JoinAccumulator doInnerJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
+    protected JoinAccumulator doInnerJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
         String[] probeKeyName = joinInfo.getOtherKey();
         JoinAccumulator result = new JoinAccumulator();
         for (ResultRecord rec : probe.getRecords()) {
@@ -230,7 +240,7 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     }
 
     // left join - core implementation
-    private JoinAccumulator doLeftJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
+    protected JoinAccumulator doLeftJoin(JoinAccumulator probe, Map<Object, ArrayList<TupleImpl>> buildInput, JoinInfo joinInfo, boolean finalJoin) {
         String[] probeKeyName = joinInfo.getOtherKey();
         JoinAccumulator result = new JoinAccumulator();
         for (ResultRecord rec : probe.getRecords()) {
@@ -259,13 +269,20 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
         return getNestedField(nestedKeyName, tuple);
     }
 
+    // Steps down into a nested tuple based on the nestedKeyName
     private static Object getNestedField(String[] nestedKeyName, TupleImpl tuple) {
         Object curr = null;
-        for (int i = 0; i < nestedKeyName.length; i++) {
-            if(i==0)
-                curr = tuple.getValueByField(nestedKeyName[i]);
-            else if(i<nestedKeyName.length-1)
-               curr = ((Map) curr).get(nestedKeyName[i]);
+        for (int i=0; i < nestedKeyName.length; i++) {
+            if (i==0) {
+                if (tuple.contains(nestedKeyName[i]) )
+                    curr = tuple.getValueByField(nestedKeyName[i]);
+                else
+                    return null;
+            }  else  {
+                curr = ((Map) curr).get(nestedKeyName[i]);
+                if (curr==null)
+                    return null;
+            }
         }
         return curr;
     }
@@ -276,17 +293,17 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
             case STREAM:
                 return ti.getSourceStreamId();
             case SOURCE_COMPONENT:
-            case FIELD:
+                return ti.getSourceComponent();
             default:
                 throw new RuntimeException(streamSelectorType + " stream selector type not yet supported");
         }
     }
 
 
-    private enum JoinType {INNER, LEFT, RIGHT, OUTER}
+    protected enum JoinType {INNER, LEFT, RIGHT, OUTER}
 
     /** Describes how to join the other stream with the current stream */
-    private static class JoinInfo implements Serializable {
+    protected static class JoinInfo implements Serializable {
         final static long serialVersionUID = 1L;
 
         String[] nestedKeyName;    // nested  key name for the current stream:  outer.inner -> { "outer", "inner }
@@ -326,16 +343,16 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
     } // class JoinInfo
 
     // Join helper to concat fields to the record
-    private class ResultRecord {
+    protected class ResultRecord {
 
         ArrayList<TupleImpl> tupleList = new ArrayList<>(); // contains one TupleImpl per Stream being joined
         ArrayList<Object> outputFields = null; // refs to fields that will be part of output fields
 
-        // 'cacheOutputFields' enables us to avoid computing outfields unless it is the final stream being joined
+        // 'cacheOutputFields' enables us to avoid projection unless it is the final stream being joined
         public ResultRecord(TupleImpl tuple, boolean cacheOutputFields) {
             tupleList.add(tuple);
             if(cacheOutputFields) {
-                outputFields = computeOutputFields(tupleList, outputKeys);
+                outputFields = doProjection(tupleList, outputKeys);
             }
         }
 
@@ -345,21 +362,20 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
             if(rhs!=null)
                 tupleList.add(rhs);
             if(cacheOutputFields) {
-                outputFields = computeOutputFields(tupleList, outputKeys);
+                outputFields = doProjection(tupleList, outputKeys);
             }
         }
 
-        private ArrayList<Object> computeOutputFields(ArrayList<TupleImpl> tuples, String[] outKeys) {
-            ArrayList<Object> result = new ArrayList<>(outKeys.length);
+        // Performs projection on the tuples
+        private ArrayList<Object> doProjection(ArrayList<TupleImpl> tuples, String[][] projectionKeys) {
+            ArrayList<Object> result = new ArrayList<>(projectionKeys.length);
             // Todo: optimize this computation... perhaps inner loop should be outside to avoid rescanning tuples
-            for ( int i = 0; i < outKeys.length; i++ ) {
+            for ( int i = 0; i < projectionKeys.length; i++ ) {
                 for ( TupleImpl tuple : tuples ) {
-                    if( tuple.contains(outKeys[i]) ) {
-                        Object field = tuple.getValueByField(outKeys[i]);
-                        if (field != null) {
-                            result.add(field);
-                            break;
-                        }
+                    Object field = getNestedField(projectionKeys[i], tuple ) ;
+                    if (field != null) {
+                        result.add(field);
+                        break;
                     }
                 }
             }
@@ -377,17 +393,11 @@ public class WindowedQueryBolt extends BaseWindowedBolt {
             }
             return null;
         }
-
     }
 
-    private class JoinAccumulator {
+    protected class JoinAccumulator {
         ArrayList<ResultRecord> records = new ArrayList<>();
 
-//        public JoinAccumulator(ArrayList<TupleImpl> initialTuples) {
-//            for (TupleImpl tuple : initialTuples) {
-//                records.add(new ResultRecord(tuple));
-//            }
-//        }
         public void insert(ResultRecord tuple) {
             records.add( tuple );
         }

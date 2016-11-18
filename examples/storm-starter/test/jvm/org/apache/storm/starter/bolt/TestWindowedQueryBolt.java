@@ -31,21 +31,24 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 
 
 public class TestWindowedQueryBolt {
+    public static final String SL_EVENT = "streamLineEvent";
     String[] userFields = {"userId", "name", "city"};
     Object[][] users = {
-            {1, "roshan", "san jose"},
-            {2, "harsha", "santa clara"},
+            {1, "roshan", "san jose" },
+            {2, "harsha", "santa clara" },
             {3, "siva",   "dublin" },
             {4, "hugo",   "san mateo" },
             {5, "suresh", "sunnyvale" },
             {6, "guru",   "palo alto" },
             {7, "arun",   "bengaluru"},
-            {8, "satish", "mumbai"},
-            {9, "mani",   "chennai"}
+            {8, "satish", "mumbai" },
+            {9, "mani",   "bengaluru" },
+            {10,"priyank","seattle" }
     };
 
     String[] orderFields = {"orderId", "userId", "itemId", "price"};
@@ -62,6 +65,28 @@ public class TestWindowedQueryBolt {
             {19, 8, 29, 9}
     };
 
+    String[] storeFields = {"storeId", "storeName", "city"};
+    Object[][] stores = {
+            {1, "store1",  "san jose"},
+            {2, "store2",  "santa clara"},
+            {3, "store3",  "dublin" },
+            {4, "store4",  "san mateo" },
+            {5, "store5",  "bengaluru" },
+    };
+
+    String [] cityFields = {"cityId","cityName","country"};
+    Object[][] cities = {
+            {1, "san jose", "US"},
+            {2, "santa clara", "US"},
+            {3, "dublin", "US" },
+            {4, "san mateo", "US" },
+            {5, "sunnyvale", "US" },
+            {6, "palo alto", "US" },
+            {7, "bengaluru", "India"},
+            {8, "mumbai", "India"},
+            {9, "chennai", "India"}
+    };
+
 
     @Test
     public void testTrivial() throws Exception {
@@ -73,13 +98,21 @@ public class TestWindowedQueryBolt {
         MockCollector collector = new MockCollector();
         bolt.prepare(null, null, collector);
         bolt.execute(window);
-        for (List<Object> rec : collector.actualResults) {
-            for (Object field : rec) {
-                System.out.print(field + ",");
-            }
-            System.out.println("");
-        }
+        printResults(collector);
         Assert.assertEquals( orderStream.size(), collector.actualResults.size() );
+    }
+
+    @Test
+    public void testNestedKeys_trivial() throws Exception {
+        ArrayList<Tuple> userStream = makeStreamLineEventStream("users", userFields, users);
+        TupleWindow window = makeTupleWindow(userStream);
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users", SL_EVENT + "." +  userFields[0])
+                .select("streamLineEvent.name, streamLineEvent.city");
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+        bolt.execute(window);
+        printResults(collector);
+        Assert.assertEquals( userStream.size(), collector.actualResults.size() );
     }
 
     @Test
@@ -95,12 +128,7 @@ public class TestWindowedQueryBolt {
         MockCollector collector = new MockCollector();
         bolt.prepare(null, null, collector);
         bolt.execute(window);
-        for (List<Object> rec : collector.actualResults) {
-            for (Object field : rec) {
-                System.out.print(field + ",");
-            }
-            System.out.println("");
-        }
+        printResults(collector);
         Assert.assertEquals( orders.length, collector.actualResults.size() );
     }
 
@@ -117,34 +145,156 @@ public class TestWindowedQueryBolt {
         MockCollector collector = new MockCollector();
         bolt.prepare(null, null, collector);
         bolt.execute(window);
-        for (List<Object> rec : collector.actualResults) {
-            for (Object field : rec) {
-                System.out.print(field + ",");
-            }
-            System.out.println("");
-        }
-        Assert.assertEquals(11, collector.actualResults.size() );
+        printResults(collector);
+        Assert.assertEquals(12, collector.actualResults.size() );
+    }
+
+    @Test
+    public void testThreeStreamInnerJoin() throws Exception {
+        ArrayList<Tuple> userStream = makeStream("users", userFields, users);
+        ArrayList<Tuple> storesStream = makeStream("stores", storeFields, stores);
+        ArrayList<Tuple> cityStream = makeStream("cities", cityFields, cities);
+        
+        TupleWindow window = makeTupleWindow(userStream, storesStream, cityStream);
+
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users", userFields[2])
+                .join("stores", "city", "users")
+                .join("cities", "cityName", "stores")
+                .select("name,storeName,city,country");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+        bolt.execute(window);
+        printResults(collector);
+        Assert.assertEquals(6, collector.actualResults.size() );
+        
+    }
+
+    @Test
+    public void testThreeStreamLeftJoin_1() throws Exception {
+        ArrayList<Tuple> userStream = makeStream("users", userFields, users);
+        ArrayList<Tuple> storesStream = makeStream("stores", storeFields, stores);
+        ArrayList<Tuple> cityStream = makeStream("cities", cityFields, cities);
+
+        TupleWindow window = makeTupleWindow(userStream,  cityStream, storesStream);
+
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users", userFields[2])
+                .leftJoin("stores", "city", "users")
+                .leftJoin("cities", "cityName", "users")
+                .select("name,storeName,city,country");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+        bolt.execute(window);
+        printResults(collector);
+        Assert.assertEquals(users.length, collector.actualResults.size() );
+    }
+
+    @Test
+    public void testThreeStreamLeftJoin_2() throws Exception {
+        ArrayList<Tuple> userStream = makeStream("users", userFields, users);
+        ArrayList<Tuple> storesStream = makeStream("stores", storeFields, stores);
+        ArrayList<Tuple> cityStream = makeStream("cities", cityFields, cities);
+
+        TupleWindow window = makeTupleWindow(userStream,  cityStream, storesStream);
+
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users", userFields[2])
+                .leftJoin("stores", "city", "users")
+                .leftJoin("cities", "cityName", "stores")
+                .select("name,storeName,city,country");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+        bolt.execute(window);
+        printResults(collector);
+        Assert.assertEquals(stores.length+1, collector.actualResults.size() ); // stores.length+1 as 2 users in Bengaluru
     }
 
 
-    private TupleWindow makeTupleWindow(ArrayList<Tuple> stream) {
+
+    @Test
+    public void testThreeStreamMixedJoin() throws Exception {
+        ArrayList<Tuple> userStream = makeStream("users", userFields, users);
+        ArrayList<Tuple> storesStream = makeStream("stores", storeFields, stores);
+        ArrayList<Tuple> cityStream = makeStream("cities", cityFields, cities);
+
+        TupleWindow window = makeTupleWindow(userStream,  cityStream, storesStream);
+
+        WindowedQueryBolt bolt = new WindowedQueryBolt(WindowedQueryBolt.StreamSelector.STREAM, "users", userFields[2])
+                .join("stores", "city", "users")
+                .leftJoin("cities", "cityName", "users")
+                .select("name,storeName,city,country");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+        bolt.execute(window);
+        printResults(collector);
+        Assert.assertEquals(stores.length+1, collector.actualResults.size() ); // stores.length+1 as 2 users in Bengaluru
+    }
+
+    private static void printResults(MockCollector collector) {
+        int counter=0;
+        for (List<Object> rec : collector.actualResults) {
+            System.out.print(++counter +  ") ");
+            for (Object field : rec) {
+                System.out.print(field + ", ");
+            }
+            System.out.println("");
+        }
+    }
+
+
+    private static TupleWindow makeTupleWindow(ArrayList<Tuple> stream) {
         return new TupleWindowImpl(stream, null, null);
     }
 
 
-    private TupleWindow makeTupleWindow(ArrayList<Tuple> stream1, ArrayList<Tuple> stream2) {
-        ArrayList<Tuple> combined = new ArrayList<>(stream1);
-        combined.addAll(stream2);
-        Collections.shuffle(combined);
+//    private TupleWindow makeTupleWindow(ArrayList<Tuple> stream1, ArrayList<Tuple> stream2) {
+//        ArrayList<Tuple> combined = new ArrayList<>(stream1);
+//        combined.addAll(stream2);
+//        Collections.shuffle(combined);
+//        return new TupleWindowImpl(combined, null, null);
+//    }
+
+    private static TupleWindow makeTupleWindow(ArrayList<Tuple>... streams) {
+        ArrayList<Tuple> combined = null;
+        for (int i = 0; i < streams.length; i++) {
+            if(i==0) {
+                combined = new ArrayList<>(streams[0]);
+            } else {
+                combined.addAll(streams[i]);
+            }
+        }
+//        Collections.shuffle(combined);
         return new TupleWindowImpl(combined, null, null);
     }
 
-    private ArrayList<Tuple> makeStream(String streamName, String[] fieldNames, Object[][] data) {
+    
+    private static ArrayList<Tuple> makeStream(String streamName, String[] fieldNames, Object[][] data) {
         ArrayList<Tuple> result = new ArrayList<>();
         MockContext mockContext = new MockContext(fieldNames);
 
         for (Object[] record : data) {
             TupleImpl rec = new TupleImpl(mockContext, Arrays.asList(record), 0, streamName);
+            result.add( rec );
+        }
+
+        return result;
+    }
+
+    private static ArrayList<Tuple> makeStreamLineEventStream (String streamName, String[] fieldNames, Object[][] records) {
+        ArrayList<Tuple> result = new ArrayList<>();
+        MockContext mockContext = new MockContext(new String[]{SL_EVENT} );
+
+        // convert each record into a HashMap using fieldNames as keys
+        for (Object[] record : records) {
+            HashMap<String,Object> recordMap = new HashMap<>( fieldNames.length );
+            for (int i = 0; i < fieldNames.length; i++) {
+                recordMap.put(fieldNames[i], record[i]);
+            }
+            List<Object> streamLineEvent = new ArrayList<>();
+            streamLineEvent.add(recordMap);
+            TupleImpl rec = new TupleImpl(mockContext, streamLineEvent, 0, streamName);
             result.add( rec );
         }
 
