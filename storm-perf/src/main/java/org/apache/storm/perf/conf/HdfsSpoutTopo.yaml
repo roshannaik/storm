@@ -1,0 +1,11 @@
+spout.count : 1
+bolt.count : 1
+
+hdfsspout.hdfs : "hdfs://c6401.ambari.apache.org:8020"
+hdfsspout.source.dir :  "/tmp/storm/in"
+hdfsspout.archive.dir : "/tmp/storm/done"
+hdfsspout.badfiles.dir : "/tmp/storm/bad"
+hdfsspout.reader.type : "text"
+# hdfsspout.commit.count
+# hdfsspout.commit.sec
+# hdfsspout.max.outstanding
