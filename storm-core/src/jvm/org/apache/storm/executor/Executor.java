@@ -64,12 +64,7 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.TupleImpl;
 import org.apache.storm.tuple.Values;
-import org.apache.storm.utils.ConfigUtils;
-import org.apache.storm.utils.DisruptorBackpressureCallback;
-import org.apache.storm.utils.DisruptorQueue;
-import org.apache.storm.utils.Time;
-import org.apache.storm.utils.Utils;
-import org.apache.storm.utils.WorkerBackpressureThread;
+import org.apache.storm.utils.*;
 import org.json.simple.JSONValue;
 import org.json.simple.parser.ParseException;
 import org.slf4j.Logger;
@@ -107,8 +102,11 @@ public abstract class Executor implements Callable, EventHandler<Object> {
 
     protected final IReportError reportError;
     protected final Random rand;
-    protected final DisruptorQueue transferQueue;
-    protected final DisruptorQueue receiveQueue;
+//    protected final DisruptorQueue transferQueue;
+//    protected final DisruptorQueue receiveQueue;
+    protected final JCQueue transferQueue;
+    protected final JCQueue receiveQueue;
+
     protected Map<Integer, Task> idToTask;
     protected final Map<String, String> credentials;
     protected final Boolean isDebug;
@@ -375,12 +373,21 @@ public abstract class Executor implements Callable, EventHandler<Object> {
     }
 
 
-    private DisruptorQueue mkExecutorBatchQueue(Map stormConf, List<Long> executorId) {
+//    private DisruptorQueue mkExecutorBatchQueue(Map stormConf, List<Long> executorId) {
+//        int sendSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_EXECUTOR_SEND_BUFFER_SIZE));
+//        int waitTimeOutMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS));
+//        int batchSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
+//        int batchTimeOutMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS));
+//        return new DisruptorQueue("executor" + executorId + "-send-queue", ProducerType.SINGLE,
+//                sendSize, waitTimeOutMs, batchSize, batchTimeOutMs);
+//    }
+
+    private JCQueue mkExecutorBatchQueue(Map stormConf, List<Long> executorId) {
         int sendSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_EXECUTOR_SEND_BUFFER_SIZE));
         int waitTimeOutMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS));
         int batchSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
         int batchTimeOutMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS));
-        return new DisruptorQueue("executor" + executorId + "-send-queue", ProducerType.SINGLE,
+        return new JCQueue("executor" + executorId + "-send-queue", JCQueue.ProducerKind.SINGLE,
                 sendSize, waitTimeOutMs, batchSize, batchTimeOutMs);
     }
 
@@ -524,7 +531,7 @@ public abstract class Executor implements Callable, EventHandler<Object> {
         return stormComponentDebug;
     }
 
-    public DisruptorQueue getReceiveQueue() {
+    public JCQueue getReceiveQueue() {
         return receiveQueue;
     }
 
@@ -532,7 +539,7 @@ public abstract class Executor implements Callable, EventHandler<Object> {
         return receiveQueue.getThrottleOn();
     }
 
-    public DisruptorQueue getTransferWorkerQueue() {
+    public JCQueue getTransferWorkerQueue() {
         return transferQueue;
     }
 

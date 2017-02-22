@@ -25,6 +25,7 @@ import org.apache.storm.serialization.KryoTupleSerializer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.utils.DisruptorQueue;
+import org.apache.storm.utils.JCQueue;
 import org.apache.storm.utils.MutableObject;
 import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
@@ -38,13 +39,13 @@ public class ExecutorTransfer implements EventHandler, Callable {
     private static final Logger LOG = LoggerFactory.getLogger(ExecutorTransfer.class);
 
     private final WorkerState workerData;
-    private final DisruptorQueue batchTransferQueue;
+    private final JCQueue batchTransferQueue;
     private final Map stormConf;
     private final KryoTupleSerializer serializer;
     private final MutableObject cachedEmit;
     private final boolean isDebug;
 
-    public ExecutorTransfer(WorkerState workerData, DisruptorQueue batchTransferQueue, Map stormConf) {
+    public ExecutorTransfer(WorkerState workerData, JCQueue batchTransferQueue, Map stormConf) {
         this.workerData = workerData;
         this.batchTransferQueue = batchTransferQueue;
         this.stormConf = stormConf;
@@ -62,7 +63,7 @@ public class ExecutorTransfer implements EventHandler, Callable {
     }
 
     @VisibleForTesting
-    public DisruptorQueue getBatchTransferQueue() {
+    public JCQueue getBatchTransferQueue() {
         return this.batchTransferQueue;
     }
 

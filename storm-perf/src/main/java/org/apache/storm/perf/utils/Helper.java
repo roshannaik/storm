@@ -45,7 +45,6 @@ public class Helper {
     cluster.shutdown();
   }
 
-
     public static LocalCluster runOnLocalCluster(String topoName, StormTopology topology) throws Exception {
         LocalCluster cluster = new LocalCluster();
         cluster.submitTopology(topoName, new Config(), topology);

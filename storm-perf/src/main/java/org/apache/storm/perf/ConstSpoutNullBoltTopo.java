@@ -88,7 +88,6 @@ public class ConstSpoutNullBoltTopo {
             while (true) {//  run indefinitely till Ctrl-C
                 Thread.sleep(20_000_000);
             }
-
         } else {
             // For measuring perf against a Storm cluster
             if (args.length > 2) {
