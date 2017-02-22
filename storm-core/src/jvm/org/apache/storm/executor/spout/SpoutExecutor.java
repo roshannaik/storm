@@ -37,11 +37,7 @@ import org.apache.storm.spout.ISpoutWaitStrategy;
 import org.apache.storm.spout.SpoutOutputCollector;
 import org.apache.storm.stats.SpoutExecutorStats;
 import org.apache.storm.tuple.TupleImpl;
-import org.apache.storm.utils.DisruptorQueue;
-import org.apache.storm.utils.MutableLong;
-import org.apache.storm.utils.RotatingMap;
-import org.apache.storm.utils.Time;
-import org.apache.storm.utils.Utils;
+import org.apache.storm.utils.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -115,7 +111,7 @@ public class SpoutExecutor extends Executor {
             this.outputCollectors.add(outputCollector);
 
             taskData.getBuiltInMetrics().registerAll(stormConf, taskData.getUserContext());
-            Map<String, DisruptorQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue);
+            Map<String, JCQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue);
             BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, taskData.getUserContext());
 
             if (spoutObject instanceof ICredentialsListener) {

@@ -6,7 +6,7 @@ import org.apache.storm.generated.KillOptions;
 
 
 public class KafkaHdfsTopoRunner {
-  public static void main(String[] args) {
+  public static void main(String[] args) throws Exception {
     LocalCluster cluster = new LocalCluster();
 
 //    cluster.submitTopology("topo1", getConfig(), KafkaHdfsTopo.getTopology("/Users/rnaik/Projects/idea/storm-golden/examples/storm-starter/src/jvm/org/apache/storm/starter/perf/conf/KafkaHdfs.yaml"));

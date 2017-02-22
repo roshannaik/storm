@@ -32,10 +32,7 @@ import org.apache.storm.task.IOutputCollector;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.TupleImpl;
-import org.apache.storm.utils.ConfigUtils;
-import org.apache.storm.utils.DisruptorQueue;
-import org.apache.storm.utils.Time;
-import org.apache.storm.utils.Utils;
+import org.apache.storm.utils.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,7 +65,7 @@ public class BoltExecutor extends Executor {
                 ((ICredentialsListener) boltObject).setCredentials(credentials);
             }
             if (Constants.SYSTEM_COMPONENT_ID.equals(componentId)) {
-                Map<String, DisruptorQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue,
+                Map<String, JCQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue,
                         "transfer", workerData.getTransferQueue());
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
 
@@ -76,7 +73,7 @@ public class BoltExecutor extends Executor {
                 BuiltinMetricsUtil.registerIconnectionClientMetrics(cachedNodePortToSocket, stormConf, userContext);
                 BuiltinMetricsUtil.registerIconnectionServerMetric(workerData.getReceiver(), stormConf, userContext);
             } else {
-                Map<String, DisruptorQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue);
+                Map<String, JCQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue);
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
             }
 

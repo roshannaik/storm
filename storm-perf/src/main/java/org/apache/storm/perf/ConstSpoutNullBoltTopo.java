@@ -74,11 +74,11 @@ public class ConstSpoutNullBoltTopo {
             // submit topology to local cluster
             Config conf = new Config();
             LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf));
-            Thread.sleep(20000); // let run for a few seconds
-            Helper.killAndExit(cluster, TOPOLOGY_NAME);
+            Thread.sleep(20_000_000); // let run for a few seconds
+//            Helper.killAndExit(cluster, TOPOLOGY_NAME);
         } else {
-            Integer pollInterval = Integer.parseInt(args[0]); // in seconds
-            Integer duration = Integer.parseInt(args[1]);  // in seconds
+            Integer duration = Integer.parseInt(args[0]);  // in seconds
+            Integer pollInterval = 60; // in seconds
 
             // submit to real cluster
             Map stormConf = Utils.readStormConfig();

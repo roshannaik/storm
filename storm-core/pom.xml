@@ -345,6 +345,13 @@
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
         </dependency>
+
+        <dependency>
+            <groupId>org.jctools</groupId>
+            <artifactId>jctools-core</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+
         <dependency>
             <!--
             hadoop-auth is needed in storm-core because ui in a secured storm cluster needs it for authentication.

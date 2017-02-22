@@ -51,11 +51,7 @@ import org.apache.storm.serialization.KryoTupleSerializer;
 import org.apache.storm.task.WorkerTopologyContext;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Fields;
-import org.apache.storm.utils.ConfigUtils;
-import org.apache.storm.utils.DisruptorQueue;
-import org.apache.storm.utils.ThriftTopologyUtils;
-import org.apache.storm.utils.TransferDrainer;
-import org.apache.storm.utils.Utils;
+import org.apache.storm.utils.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -147,7 +143,7 @@ public class WorkerState {
         return cachedNodeToPortSocket;
     }
 
-    public Map<List<Long>, DisruptorQueue> getExecutorReceiveQueueMap() {
+    public Map<List<Long>, JCQueue> getExecutorReceiveQueueMap() {
         return executorReceiveQueueMap;
     }
 
@@ -195,10 +191,10 @@ public class WorkerState {
     final ReentrantReadWriteLock endpointSocketLock;
     final AtomicReference<Map<Integer, NodeInfo>> cachedTaskToNodePort;
     final AtomicReference<Map<NodeInfo, IConnection>> cachedNodeToPortSocket;
-    final Map<List<Long>, DisruptorQueue> executorReceiveQueueMap;
+    final Map<List<Long>, JCQueue> executorReceiveQueueMap;
     // executor id is in form [start_task_id end_task_id]
     // short executor id is start_task_id
-    final Map<Integer, DisruptorQueue> shortExecutorReceiveQueueMap;
+    final Map<Integer, JCQueue> shortExecutorReceiveQueueMap;
     final Map<Integer, Integer> taskToShortExecutor;
     final Runnable suicideCallback;
     final Utils.UptimeComputer uptime;
@@ -231,7 +227,7 @@ public class WorkerState {
         return throttleOn;
     }
 
-    public DisruptorQueue getTransferQueue() {
+    public JCQueue getTransferQueue() {
         return transferQueue;
     }
 
@@ -239,7 +235,7 @@ public class WorkerState {
         return userTimer;
     }
 
-    final DisruptorQueue transferQueue;
+    final JCQueue transferQueue;
 
     // Timers
     final StormTimer heartbeatTimer = mkHaltingTimer("heartbeat-timer");
@@ -264,7 +260,7 @@ public class WorkerState {
         Map topologyConf, IStateStorage stateStorage, IStormClusterState stormClusterState)
         throws IOException, InvalidTopologyException {
         this.executors = new HashSet<>(readWorkerExecutors(stormClusterState, topologyId, assignmentId, port));
-        this.transferQueue = new DisruptorQueue("worker-transfer-queue",
+        this.transferQueue = new JCQueue("worker-transfer-queue",
             Utils.getInt(topologyConf.get(Config.TOPOLOGY_TRANSFER_BUFFER_SIZE)),
             (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
             Utils.getInt(topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE)),
@@ -285,7 +281,7 @@ public class WorkerState {
         this.executorReceiveQueueMap = mkReceiveQueueMap(topologyConf, executors);
         this.shortExecutorReceiveQueueMap = new HashMap<>();
         this.taskIds = new ArrayList<>();
-        for (Map.Entry<List<Long>, DisruptorQueue> entry : executorReceiveQueueMap.entrySet()) {
+        for (Map.Entry<List<Long>, JCQueue> entry : executorReceiveQueueMap.entrySet()) {
             this.shortExecutorReceiveQueueMap.put(entry.getKey().get(0).intValue(), entry.getValue());
             this.taskIds.addAll(StormCommon.executorIdToTasks(entry.getKey()));
         }
@@ -442,9 +438,9 @@ public class WorkerState {
         Set<Integer> remoteTasks = Sets.difference(new HashSet<Integer>(outboundTasks), new HashSet<>(taskIds));
         Long now = System.currentTimeMillis();
         Map<Integer, Double> localLoad = shortExecutorReceiveQueueMap.entrySet().stream().collect(Collectors.toMap(
-            (Function<Map.Entry<Integer, DisruptorQueue>, Integer>) Map.Entry::getKey,
-            (Function<Map.Entry<Integer, DisruptorQueue>, Double>) entry -> {
-                DisruptorQueue.QueueMetrics qMetrics = entry.getValue().getMetrics();
+            (Function<Map.Entry<Integer, JCQueue>, Integer>) Map.Entry::getKey,
+            (Function<Map.Entry<Integer, JCQueue>, Double>) entry -> {
+                JCQueue.QueueMetrics qMetrics = entry.getValue().getMetrics();
                 return ( (double) qMetrics.population()) / qMetrics.capacity();
             }));
 
@@ -502,7 +498,7 @@ public class WorkerState {
         }
 
         for (Map.Entry<Integer, List<AddressedTuple>> entry : grouped.entrySet()) {
-            DisruptorQueue queue = shortExecutorReceiveQueueMap.get(entry.getKey());
+            JCQueue queue = shortExecutorReceiveQueueMap.get(entry.getKey());
             if (null != queue) {
                 queue.publish(entry.getValue());
             } else {
@@ -629,10 +625,10 @@ public class WorkerState {
         return executorsAssignedToThisWorker;
     }
 
-    private Map<List<Long>, DisruptorQueue> mkReceiveQueueMap(Map topologyConf, Set<List<Long>> executors) {
-        Map<List<Long>, DisruptorQueue> receiveQueueMap = new HashMap<>();
+    private Map<List<Long>, JCQueue> mkReceiveQueueMap(Map topologyConf, Set<List<Long>> executors) {
+        Map<List<Long>, JCQueue> receiveQueueMap = new HashMap<>();
         for (List<Long> executor : executors) {
-            receiveQueueMap.put(executor, new DisruptorQueue("receive-queue",
+            receiveQueueMap.put(executor, new JCQueue("receive-queue",
                 Utils.getInt(topologyConf.get(Config.TOPOLOGY_EXECUTOR_RECEIVE_BUFFER_SIZE)),
                 (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
                 Utils.getInt(topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE)),
