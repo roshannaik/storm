@@ -28,6 +28,7 @@ import org.apache.storm.Config;
 import org.apache.storm.metric.api.IStatefulObject;
 import org.apache.storm.metric.internal.RateTracker;
 import org.jctools.queues.ConcurrentCircularArrayQueue;
+import org.jctools.queues.MessagePassingQueue;
 import org.jctools.queues.MpscArrayQueue;
 import org.jctools.queues.SpscArrayQueue;
 import org.slf4j.Logger;
@@ -164,6 +165,52 @@ public class JCQueue implements IStatefulObject {
             }
         }
     }
+
+    private class ThreadLocalBatcher implements ThreadLocalInserter {
+        private final ConcurrentLinkedQueue<ArrayList<Object>> _overflow;
+        private ArrayList<Object> _currentBatch;
+
+        public ThreadLocalBatcher() {
+            _overflow = new ConcurrentLinkedQueue<ArrayList<Object>>();
+            _currentBatch = new ArrayList<>(_inputBatchSize);
+        }
+
+        public synchronized void add(Object obj) {
+            _currentBatch.add(obj);
+            _overflowCount.incrementAndGet();
+
+            if (_currentBatch.size() >= _inputBatchSize) {
+                boolean flushed = false;
+                if (_overflow.isEmpty()) {
+                    int publishCount = publishDirect(_currentBatch, false);
+                    _currentBatch.subList(0, publishCount).clear(); // remove published elements
+                    _overflowCount.addAndGet(0 - publishCount);
+                    flushed = (_currentBatch.size() < _inputBatchSize);
+                }
+
+                if (!flushed) {
+                    _overflow.add(_currentBatch);
+                    _currentBatch = new ArrayList<>(_inputBatchSize);
+                }
+            }
+        }
+
+        public synchronized void forceBatch() {
+            if (!_currentBatch.isEmpty()) {
+                _overflow.add(_currentBatch);
+                _currentBatch = new ArrayList<>(_inputBatchSize);
+            }
+        }
+
+        public void flush(boolean block) {
+            while (!_overflow.isEmpty()) {
+                publishDirect(_overflow.peek(), block);
+                _overflowCount.addAndGet(0 - _overflow.poll().size());
+            }
+        }
+
+
+    } // class ThreadLocalBatcher
 
     private class Flusher implements Runnable {
         private AtomicBoolean _isFlushing = new AtomicBoolean(false);
@@ -335,6 +382,19 @@ public class JCQueue implements IStatefulObject {
         }
     }
 
+    public void consumeBatchWhenAvailable2(EventHandler<Object> handler) {
+        MessagePassingQueue.Consumer<Object> consumer  =
+                (obj) -> {
+                    try {
+                        handler.onEvent(obj, 0, _buffer.peek() == null);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                };
+        _buffer.drain(consumer);
+        LockSupport.parkNanos(1);
+    }
+
     private void consumeBatchToCursor(EventHandler<Object> handler) throws InterruptedException {
 
         Object o;
@@ -373,12 +433,31 @@ public class JCQueue implements IStatefulObject {
         return false;
     }
 
+    private int publishDirect(ArrayList<Object> objs, boolean block) {
+        MessagePassingQueue.Supplier<Object> supplier =
+                new MessagePassingQueue.Supplier<Object> (){
+                    int i = 0;
+                    @Override
+                    public Object get() {
+                        return objs.get(i++);
+                    }
+                };
+        return  _buffer.fill(supplier, objs.size() );
+    }
+
+
     public void publish(Object obj) {
         Long id = getId();
         JCQueue.ThreadLocalInserter batcher = _batchers.get(id);
         if (batcher == null) {
             //This thread is the only one ever creating this, so this is safe
-            batcher = new JCQueue.ThreadLocalJustInserter();
+//            batcher = new JCQueue.ThreadLocalJustInserter();
+            if (_inputBatchSize > 1) {
+                batcher = new ThreadLocalBatcher();
+            } else {
+                batcher = new ThreadLocalJustInserter();
+            }
+
             _batchers.put(id, batcher);
         }
         try {
