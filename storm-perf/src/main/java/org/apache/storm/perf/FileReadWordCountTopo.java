@@ -68,9 +68,10 @@ public class FileReadWordCountTopo {
             // submit topology to local cluster
             Config conf = new Config();
             conf.put(INPUT_FILE, "/tmp/lines.txt");
-            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf));
-            Thread.sleep(20000); // let run for a few seconds
-            Helper.killAndExit(cluster, TOPOLOGY_NAME);
+            Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf));
+
+            while (true) // let run indefinitely
+                Thread.sleep(20_000);
         } else {
             String wordsFile = args[0];  // in seconds
             Integer pollInterval = Integer.parseInt(args[1]); // in seconds

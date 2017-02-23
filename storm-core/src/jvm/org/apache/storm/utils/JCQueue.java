@@ -37,6 +37,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 
 public class JCQueue implements IStatefulObject {
@@ -328,31 +329,29 @@ public class JCQueue implements IStatefulObject {
 
     public void consumeBatchWhenAvailable(EventHandler<Object> handler) {
         try {
-            if (! _buffer.isEmpty()) {
-                consumeBatchToCursor(handler);
-            }
+            consumeBatchToCursor(handler);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
 
     private void consumeBatchToCursor(EventHandler<Object> handler) throws InterruptedException {
-        int count = _buffer.size(); // hosting outside loop to prevent recompute
-        for (int i = 0; i < count; i++) {
-            Object o = _buffer.poll();
+
+        Object o;
+        while( (o = _buffer.poll()) != null ) {
             if (o == INTERRUPT) {
-                throw new InterruptedException("Disruptor processing interrupted");
-            } else if (o == null) {
-                Thread.sleep(_readTimeout);
+                throw new InterruptedException("JCQ processing interrupted");
             } else {
                 try {
-                    handler.onEvent(o, 0, i==count-1);
+                    handler.onEvent(o, 0, _buffer.peek()==null);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
             }
         }
+        LockSupport.parkNanos(1);
     }
+
     public void registerBackpressureCallback(DisruptorBackpressureCallback cb) {
         // NO-OP
     }
@@ -365,6 +364,8 @@ public class JCQueue implements IStatefulObject {
         if( _buffer.offer(obj) ) {
             _metrics.notifyArrivals(1);
             return true;
+        } else {
+            LockSupport.parkNanos(1);;
         }
         if(block) {
             Thread.sleep(_readTimeout);
