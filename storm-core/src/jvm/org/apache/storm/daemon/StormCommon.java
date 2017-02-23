@@ -368,6 +368,8 @@ public class StormCommon {
     public static void addEventLogger(Map conf, StormTopology topology) {
         Integer numExecutors = Utils.getInt(conf.get(Config.TOPOLOGY_EVENTLOGGER_EXECUTORS),
                 Utils.getInt(conf.get(Config.TOPOLOGY_WORKERS)));
+        if(numExecutors==null || numExecutors==0)
+            return;
         HashMap<String, Object> componentConf = new HashMap<>();
         componentConf.put(Config.TOPOLOGY_TASKS, numExecutors);
         componentConf.put(Config.TOPOLOGY_TICK_TUPLE_FREQ_SECS, Utils.getInt(conf.get(Config.TOPOLOGY_MESSAGE_TIMEOUT_SECS)));
