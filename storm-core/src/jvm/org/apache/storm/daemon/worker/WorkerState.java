@@ -34,7 +34,6 @@ import org.apache.storm.generated.Grouping;
 import org.apache.storm.generated.InvalidTopologyException;
 import org.apache.storm.generated.NodeInfo;
 import org.apache.storm.generated.StormBase;
-import org.apache.storm.generated.StormBase;
 import org.apache.storm.generated.StormTopology;
 import org.apache.storm.generated.StreamInfo;
 import org.apache.storm.generated.TopologyStatus;
@@ -65,10 +64,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
-import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
-public class WorkerState {
+public class WorkerState implements JCQueue.Consumer {
 
     private static final Logger LOG = LoggerFactory.getLogger(WorkerState.class);
 
@@ -536,20 +534,26 @@ public class WorkerState {
     }
 
     // TODO: consider having a max batch size besides what disruptor does automagically to prevent latency issues
-    public void sendTuplesToRemoteWorker(HashMap<Integer, ArrayList<TaskMessage>> packets, long seqId, boolean batchEnd) {
+    public void sendTuplesToRemoteWorker(HashMap<Integer, ArrayList<TaskMessage>> packets) {
         drainer.add(packets);
-        if (batchEnd) {
-            ReentrantReadWriteLock.ReadLock readLock = endpointSocketLock.readLock();
-            try {
-                readLock.lock();
-                drainer.send(cachedTaskToNodePort.get(), cachedNodeToPortSocket.get());
-            } finally {
-                readLock.unlock();
-            }
-            drainer.clear();
-        }
     }
 
+    @Override
+    public void accept(Object packets) throws Exception {
+        sendTuplesToRemoteWorker((HashMap<Integer, ArrayList<TaskMessage>>)packets);
+    }
+
+    @Override
+    public void flush() {
+        ReentrantReadWriteLock.ReadLock readLock = endpointSocketLock.readLock();
+        try {
+            readLock.lock();
+            drainer.send(cachedTaskToNodePort.get(), cachedNodeToPortSocket.get());
+        } finally {
+            readLock.unlock();
+        }
+        drainer.clear();
+    }
 
     private void assertCanSerialize(KryoTupleSerializer serializer, List<AddressedTuple> tuples) {
         // Check that all of the tuples can be serialized by serializing them

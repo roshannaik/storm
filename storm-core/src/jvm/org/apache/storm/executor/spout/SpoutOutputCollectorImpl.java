@@ -90,8 +90,9 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
             outTasks = taskData.getOutgoingTasks(stream, values);
         }
 
-        List<Long> ackSeq = new ArrayList<>();
         boolean needAck = (messageId != null) && hasAckers;
+
+        List<Long> ackSeq = needAck ? new ArrayList<>() : null;
 
         long rootId = MessageId.generateId(random);
         for (Integer t : outTasks) {

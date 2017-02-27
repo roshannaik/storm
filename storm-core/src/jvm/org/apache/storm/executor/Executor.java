@@ -19,8 +19,7 @@ package org.apache.storm.executor;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
-import com.lmax.disruptor.EventHandler;
-import com.lmax.disruptor.dsl.ProducerType;
+
 import java.io.IOException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -72,7 +71,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Callable;
 
-public abstract class Executor implements Callable, EventHandler<Object> {
+public abstract class Executor implements Callable, JCQueue.Consumer {
 
     private static final Logger LOG = LoggerFactory.getLogger(Executor.class);
 
@@ -237,9 +236,28 @@ public abstract class Executor implements Callable, EventHandler<Object> {
 
     public abstract void tupleActionFn(int taskId, TupleImpl tuple) throws Exception;
 
-    @SuppressWarnings("unchecked")
+//    @SuppressWarnings("unchecked")
+//    @Override
+//    public void onEvent(Object event, long seq, boolean endOfBatch) throws Exception {
+//        ArrayList<AddressedTuple> addressedTuples = (ArrayList<AddressedTuple>) event;
+//        for (AddressedTuple addressedTuple : addressedTuples) {
+//            TupleImpl tuple = (TupleImpl) addressedTuple.getTuple();
+//            int taskId = addressedTuple.getDest();
+//            if (isDebug) {
+//                LOG.info("Processing received message FOR {} TUPLE: {}", taskId, tuple);
+//            }
+//            if (taskId != AddressedTuple.BROADCAST_DEST) {
+//                tupleActionFn(taskId, tuple);
+//            } else {
+//                for (Integer t : taskIds) {
+//                    tupleActionFn(t, tuple);
+//                }
+//            }
+//        }
+//    }
+
     @Override
-    public void onEvent(Object event, long seq, boolean endOfBatch) throws Exception {
+    public void accept(Object event) throws Exception {
         ArrayList<AddressedTuple> addressedTuples = (ArrayList<AddressedTuple>) event;
         for (AddressedTuple addressedTuple : addressedTuples) {
             TupleImpl tuple = (TupleImpl) addressedTuple.getTuple();
@@ -255,6 +273,11 @@ public abstract class Executor implements Callable, EventHandler<Object> {
                 }
             }
         }
+    }
+
+    @Override
+    public void flush() {
+        // NO-OP
     }
 
     public void metricsTick(Task taskData, TupleImpl tuple) {
