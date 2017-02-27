@@ -22,7 +22,6 @@ package org.apache.storm.utils;
 // TODO : Support wait strategy
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.dsl.ProducerType;
 import org.apache.storm.Config;
 import org.apache.storm.metric.api.IStatefulObject;
@@ -368,13 +367,13 @@ public class JCQueue implements IStatefulObject {
         }
     }
 
-    public void consumeBatch(EventHandler<Object> handler) {
+    public void consumeBatch(JCQueue.Consumer handler) {
         if (_metrics.population() > 0) {
             consumeBatchWhenAvailable(handler);
         }
     }
 
-    public void consumeBatchWhenAvailable(EventHandler<Object> handler) {
+    public void consumeBatchWhenAvailable(JCQueue.Consumer handler) {
         try {
             consumeBatchToCursor(handler);
         } catch (InterruptedException e) {
@@ -382,35 +381,25 @@ public class JCQueue implements IStatefulObject {
         }
     }
 
-    public void consumeBatchWhenAvailable2(EventHandler<Object> handler) {
-        MessagePassingQueue.Consumer<Object> consumer  =
-                (obj) -> {
+
+    private void consumeBatchToCursor(JCQueue.Consumer consumer) throws InterruptedException {
+        int count = _buffer.drain(
+                obj -> {
                     try {
-                        handler.onEvent(obj, 0, _buffer.peek() == null);
+                        if (obj == INTERRUPT) {
+                            throw new InterruptedException("JCQ processing interrupted");
+                        }
+                        consumer.accept(obj);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
-                };
-        _buffer.drain(consumer);
-        LockSupport.parkNanos(1);
+                });
+        consumer.flush();;
+
+        if(count==0)
+            LockSupport.parkNanos(1);
     }
 
-    private void consumeBatchToCursor(EventHandler<Object> handler) throws InterruptedException {
-
-        Object o;
-        while( (o = _buffer.poll()) != null ) {
-            if (o == INTERRUPT) {
-                throw new InterruptedException("JCQ processing interrupted");
-            } else {
-                try {
-                    handler.onEvent(o, 0, _buffer.peek()==null);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        }
-        LockSupport.parkNanos(1);
-    }
 
     public void registerBackpressureCallback(DisruptorBackpressureCallback cb) {
         // NO-OP
@@ -509,5 +498,10 @@ public class JCQueue implements IStatefulObject {
         public QueueFullException() {
             super(_queueName + " is full");
         }
+    }
+
+    public interface Consumer {
+        void accept(Object event) throws Exception ;
+        void flush();
     }
 }

@@ -55,7 +55,6 @@ import org.apache.storm.generated.LSWorkerHeartbeat;
 import org.apache.storm.generated.LogConfig;
 import org.apache.storm.messaging.IConnection;
 import org.apache.storm.messaging.IContext;
-import org.apache.storm.messaging.TaskMessage;
 import org.apache.storm.security.auth.AuthUtils;
 import org.apache.storm.security.auth.IAutoCredentials;
 import org.apache.storm.stats.StatsUtil;
@@ -66,12 +65,12 @@ import org.apache.storm.utils.Time;
 import org.apache.storm.utils.Utils;
 import org.apache.storm.utils.WorkerBackpressureCallback;
 import org.apache.storm.utils.WorkerBackpressureThread;
+import org.apache.storm.utils.JCQueue;
 import org.apache.zookeeper.data.ACL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
-import com.lmax.disruptor.EventHandler;
 
 import uk.org.lidalia.sysoutslf4j.context.SysOutOverSLF4J;
 
@@ -201,8 +200,7 @@ public class Worker implements Shutdownable, DaemonCommon {
                 }
                 executorsAtom.set(newExecutors);
 
-                EventHandler<Object> tupleHandler = (packets, seqId, batchEnd) -> workerState
-                    .sendTuplesToRemoteWorker((HashMap<Integer, ArrayList<TaskMessage>>) packets, seqId, batchEnd);
+                JCQueue.Consumer tupleHandler = workerState;
 
                 // This thread will publish the messages destined for remote tasks to remote connections
                 transferThread = Utils.asyncLoop(() -> {
@@ -225,7 +223,7 @@ public class Worker implements Shutdownable, DaemonCommon {
                 if ((Boolean) topologyConf.get(Config.TOPOLOGY_BACKPRESSURE_ENABLE)) {
                     backpressureThread.start();
                     stormClusterState.topologyBackpressure(topologyId, workerState::refreshThrottle);
-                    
+
                     int pollingSecs = Utils.getInt(topologyConf.get(Config.TASK_BACKPRESSURE_POLL_SECS));
                     workerState.refreshBackpressureTimer.scheduleRecurring(0, pollingSecs, workerState::refreshThrottle);
                 }
@@ -245,7 +243,7 @@ public class Worker implements Shutdownable, DaemonCommon {
                             }
                         }
                     });
-              
+
                 // The jitter allows the clients to get the data at different times, and avoids thundering herd
                 if (!(Boolean) topologyConf.get(Config.TOPOLOGY_DISABLE_LOADAWARE_MESSAGING)) {
                     workerState.refreshLoadTimer.scheduleRecurringWithJitter(0, 1, 500, workerState::refreshLoad);

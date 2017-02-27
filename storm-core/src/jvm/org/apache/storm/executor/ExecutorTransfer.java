@@ -18,13 +18,11 @@
 package org.apache.storm.executor;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.lmax.disruptor.EventHandler;
 import org.apache.storm.Config;
 import org.apache.storm.daemon.worker.WorkerState;
 import org.apache.storm.serialization.KryoTupleSerializer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Tuple;
-import org.apache.storm.utils.DisruptorQueue;
 import org.apache.storm.utils.JCQueue;
 import org.apache.storm.utils.MutableObject;
 import org.apache.storm.utils.Utils;
@@ -35,7 +33,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
-public class ExecutorTransfer implements EventHandler, Callable {
+public class ExecutorTransfer implements JCQueue.Consumer, Callable {
     private static final Logger LOG = LoggerFactory.getLogger(ExecutorTransfer.class);
 
     private final WorkerState workerData;
@@ -78,12 +76,15 @@ public class ExecutorTransfer implements EventHandler, Callable {
     }
 
     @Override
-    public void onEvent(Object event, long sequence, boolean endOfBatch) throws Exception {
+    public void accept(Object event)  {
         ArrayList cachedEvents = (ArrayList) cachedEmit.getObject();
         cachedEvents.add(event);
-        if (endOfBatch) {
-            workerData.transfer(serializer, cachedEvents);
-            cachedEmit.setObject(new ArrayList<>());
-        }
+    }
+
+    @Override
+    public void flush()  {
+        ArrayList cachedEvents = (ArrayList) cachedEmit.getObject();
+        workerData.transfer(serializer, cachedEvents);
+        cachedEmit.setObject(new ArrayList<>());
     }
 }
