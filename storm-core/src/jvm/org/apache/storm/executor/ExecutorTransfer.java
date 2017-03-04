@@ -20,6 +20,7 @@ package org.apache.storm.executor;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.storm.Config;
 import org.apache.storm.daemon.worker.WorkerState;
+import org.apache.storm.messaging.TaskMessage;
 import org.apache.storm.serialization.KryoTupleSerializer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Tuple;
@@ -30,6 +31,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
@@ -40,15 +43,19 @@ public class ExecutorTransfer implements JCQueue.Consumer, Callable {
     private final JCQueue batchTransferQueue;
     private final Map stormConf;
     private final KryoTupleSerializer serializer;
-    private final MutableObject cachedEmit;
+//    private final ArrayList cachedEvents; // TODO : change to ArrayList<AddressedTuple>
     private final boolean isDebug;
+
+//    ArrayList<AddressedTuple> localTuples = new ArrayList<>();
+    HashMap<Integer, List<AddressedTuple>> localMap = new HashMap<>();
+    HashMap<Integer, List<TaskMessage>> remoteMap  = new HashMap<>();
 
     public ExecutorTransfer(WorkerState workerData, JCQueue batchTransferQueue, Map stormConf) {
         this.workerData = workerData;
         this.batchTransferQueue = batchTransferQueue;
         this.stormConf = stormConf;
         this.serializer = new KryoTupleSerializer(stormConf, workerData.getWorkerTopologyContext());
-        this.cachedEmit = new MutableObject(new ArrayList<>());
+//        this.cachedEvents = new ArrayList<>();
         this.isDebug = Utils.getBoolean(stormConf.get(Config.TOPOLOGY_DEBUG), false);
     }
 
@@ -76,15 +83,20 @@ public class ExecutorTransfer implements JCQueue.Consumer, Callable {
     }
 
     @Override
-    public void accept(Object event)  {
-        ArrayList cachedEvents = (ArrayList) cachedEmit.getObject();
-        cachedEvents.add(event);
+    public void accept(Object event)  { //TODO: change param type to AddresedTuple ?
+        workerData.classifyLocalOrRemote(serializer, (AddressedTuple) event, localMap, remoteMap);
     }
 
     @Override
-    public void flush()  {
-        ArrayList cachedEvents = (ArrayList) cachedEmit.getObject();
-        workerData.transfer(serializer, cachedEvents);
-        cachedEmit.setObject(new ArrayList<>());
+    public void flush() {
+        if (!localMap.isEmpty()) {
+            workerData.transferLocal(localMap);
+        }
+        if (!remoteMap.isEmpty()) {
+            workerData.transferRemote(remoteMap);
+        }
+        localMap.clear();
+        remoteMap.clear();
     }
+
 }

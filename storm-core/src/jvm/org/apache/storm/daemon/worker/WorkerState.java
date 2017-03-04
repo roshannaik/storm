@@ -249,6 +249,11 @@ public class WorkerState implements JCQueue.Consumer {
     // global variables only used internally in class
     private final Set<Integer> outboundTasks;
     private final AtomicLong nextUpdate = new AtomicLong(0);
+
+    public boolean isTrySerializeLocal() {
+        return trySerializeLocal;
+    }
+
     private final boolean trySerializeLocal;
     private final TransferDrainer drainer;
 
@@ -476,60 +481,95 @@ public class WorkerState implements JCQueue.Consumer {
         LOG.info("Registering IConnectionCallbacks for {}:{}", assignmentId, port);
         receiver.registerRecv(new DeserializingConnectionCallback(topologyConf,
             getWorkerTopologyContext(),
-            this::transferLocal));
+            this::transferLocalBatch));
     }
 
-    public void transferLocal(List<AddressedTuple> tupleBatch) {
-        Map<Integer, List<AddressedTuple>> grouped = new HashMap<>();
-        for (AddressedTuple tuple : tupleBatch) {
-            Integer executor = taskToShortExecutor.get(tuple.dest);
-            if (null == executor) {
-                LOG.warn("Received invalid messages for unknown tasks. Dropping... ");
-                continue;
-            }
-            List<AddressedTuple> current = grouped.get(executor);
-            if (null == current) {
-                current = new ArrayList<>();
-                grouped.put(executor, current);
-            }
-            current.add(tuple);
-        }
+    public void transferLocalBatch(List<AddressedTuple> tupleBatch) {
+        Map<Integer, List<AddressedTuple>> groupedLocalTuples = groupLocaltuples(tupleBatch);
+        transferLocal(groupedLocalTuples);
+    }
 
-        for (Map.Entry<Integer, List<AddressedTuple>> entry : grouped.entrySet()) {
+
+    Map<Integer, List<AddressedTuple>> groupLocaltuples(List<AddressedTuple> tupleBatch) {
+        Map<Integer, List<AddressedTuple>> grouping = new HashMap<>();
+        for (AddressedTuple tuple : tupleBatch) {
+            groupLocalTuple(grouping, tuple);
+        }
+        return grouping;
+    }
+
+    private void groupLocalTuple(Map<Integer, List<AddressedTuple>> grouped, AddressedTuple addressedTuple) {
+        Integer executor = taskToShortExecutor.get(addressedTuple.dest);
+        if (null == executor) {
+            LOG.warn("Received invalid messages for unknown tasks. Dropping... ");
+            return;
+        }
+        List<AddressedTuple> current = grouped.get(executor);
+        if (null == current) {
+            current = new ArrayList<>();
+            grouped.put(executor, current);
+        }
+        current.add(addressedTuple);
+    }
+
+    public void transferLocal(Map<Integer, List<AddressedTuple>> localGroupedTuples) {
+        for (Map.Entry<Integer, List<AddressedTuple>> entry : localGroupedTuples.entrySet()) {
             JCQueue queue = shortExecutorReceiveQueueMap.get(entry.getKey());
             if (null != queue) {
                 queue.publish(entry.getValue());
             } else {
-                LOG.warn("Received invalid messages for unknown tasks. Dropping... ");
+                LOG.warn("Received invalid messages for unknown task. Dropping... ");
             }
         }
     }
 
-    public void transfer(KryoTupleSerializer serializer, List<AddressedTuple> tupleBatch) {
+    public void transferRemote(Map<Integer, List<TaskMessage>> remoteMap) {
+        transferQueue.publish(remoteMap);
+    }
+
+//    public void transfer(KryoTupleSerializer serializer, List<AddressedTuple> tupleBatch) {
+//        if (trySerializeLocal) {
+//            assertCanSerialize(serializer, tupleBatch);
+//        }
+//        List<AddressedTuple> local = new ArrayList<>();
+//        Map<Integer, List<TaskMessage>> remoteMap = new HashMap<>();
+//        for (AddressedTuple addressedTuple : tupleBatch) {
+//            int destTask = addressedTuple.getDest();
+//            if (taskIds.contains(destTask)) {
+//                // Local task
+//                local.add(addressedTuple);
+//            } else {
+//                // Using java objects directly to avoid performance issues in java code
+//                if (! remoteMap.containsKey(destTask)) {
+//                    remoteMap.put(destTask, new ArrayList<>());
+//                }
+//                remoteMap.get(destTask).add(new TaskMessage(destTask, serializer.serialize(addressedTuple.getTuple())));
+//            }
+//        }
+//
+//        if (!local.isEmpty()) {
+//            transferLocal(local);
+//        }
+//        if (!remoteMap.isEmpty()) {
+//            transferQueue.publish(remoteMap);
+//        }
+//    }
+
+    public void classifyLocalOrRemote(KryoTupleSerializer serializer, AddressedTuple addressedTuple,
+                                      Map<Integer, List<AddressedTuple>> localMap, Map<Integer, List<TaskMessage>> remoteMap) {
         if (trySerializeLocal) {
-            assertCanSerialize(serializer, tupleBatch);
-        }
-        List<AddressedTuple> local = new ArrayList<>();
-        Map<Integer, List<TaskMessage>> remoteMap = new HashMap<>();
-        for (AddressedTuple addressedTuple : tupleBatch) {
-            int destTask = addressedTuple.getDest();
-            if (taskIds.contains(destTask)) {
-                // Local task
-                local.add(addressedTuple);
-            } else {
-                // Using java objects directly to avoid performance issues in java code
-                if (! remoteMap.containsKey(destTask)) {
-                    remoteMap.put(destTask, new ArrayList<>());
-                }
-                remoteMap.get(destTask).add(new TaskMessage(destTask, serializer.serialize(addressedTuple.getTuple())));
-            }
+            assertCanSerialize(serializer, addressedTuple);
         }
 
-        if (!local.isEmpty()) {
-            transferLocal(local);
-        }
-        if (!remoteMap.isEmpty()) {
-            transferQueue.publish(remoteMap);
+        int destTask = addressedTuple.getDest();
+        if (taskIds.contains(destTask)) {
+            groupLocalTuple(localMap, addressedTuple);
+        } else {
+            // Using java objects directly to avoid performance issues in java code
+            if (! remoteMap.containsKey(destTask)) {
+                remoteMap.put(destTask, new ArrayList<>());
+            }
+            remoteMap.get(destTask).add(new TaskMessage(destTask, serializer.serialize(addressedTuple.getTuple())));
         }
     }
 
@@ -558,8 +598,13 @@ public class WorkerState implements JCQueue.Consumer {
     private void assertCanSerialize(KryoTupleSerializer serializer, List<AddressedTuple> tuples) {
         // Check that all of the tuples can be serialized by serializing them
         for (AddressedTuple addressedTuple : tuples) {
-            serializer.serialize(addressedTuple.getTuple());
+            assertCanSerialize(serializer,addressedTuple);
         }
+    }
+
+    private void assertCanSerialize(KryoTupleSerializer serializer, AddressedTuple addressedTuple) {
+        // Check tuples can be serialized by serializing it
+        serializer.serialize(addressedTuple.getTuple());
     }
 
     public WorkerTopologyContext getWorkerTopologyContext() {
