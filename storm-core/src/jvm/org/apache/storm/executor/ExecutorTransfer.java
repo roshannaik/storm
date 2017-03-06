@@ -40,11 +40,13 @@ public class ExecutorTransfer implements JCQueue.Consumer, Callable {
     private static final Logger LOG = LoggerFactory.getLogger(ExecutorTransfer.class);
 
     private final WorkerState workerData;
-    private final JCQueue batchTransferQueue;
+//    private final JCQueue batchTransferQueue;
     private final Map stormConf;
     private final KryoTupleSerializer serializer;
 //    private final ArrayList cachedEvents; // TODO : change to ArrayList<AddressedTuple>
     private final boolean isDebug;
+    private final int producerBatchSz;
+    private int currBatchSz = 0;
 
 //    ArrayList<AddressedTuple> localTuples = new ArrayList<>();
     HashMap<Integer, List<AddressedTuple>> localMap = new HashMap<>();
@@ -52,34 +54,41 @@ public class ExecutorTransfer implements JCQueue.Consumer, Callable {
 
     public ExecutorTransfer(WorkerState workerData, JCQueue batchTransferQueue, Map stormConf) {
         this.workerData = workerData;
-        this.batchTransferQueue = batchTransferQueue;
+//        this.batchTransferQueue = batchTransferQueue;
         this.stormConf = stormConf;
         this.serializer = new KryoTupleSerializer(stormConf, workerData.getWorkerTopologyContext());
 //        this.cachedEvents = new ArrayList<>();
         this.isDebug = Utils.getBoolean(stormConf.get(Config.TOPOLOGY_DEBUG), false);
+        this.producerBatchSz = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
     }
 
     public void transfer(int task, Tuple tuple) {
-        AddressedTuple val = new AddressedTuple(task, tuple);
+        AddressedTuple addressedTuple = new AddressedTuple(task, tuple);
         if (isDebug) {
-            LOG.info("TRANSFERRING tuple {}", val);
+            LOG.info("TRANSFERRING tuple {}", addressedTuple);
         }
-        batchTransferQueue.publish(val);
+        accept(addressedTuple);
+        ++currBatchSz;
+        if(currBatchSz>=producerBatchSz) {
+            flush();
+        }
+//        batchTransferQueue.publish(val);
     }
 
-    @VisibleForTesting
-    public JCQueue getBatchTransferQueue() {
-        return this.batchTransferQueue;
-    }
+//    @VisibleForTesting
+//    public JCQueue getBatchTransferQueue() {
+//        return this.batchTransferQueue;
+//    }
 
     @Override
     public Object call() throws Exception {
-        batchTransferQueue.consumeBatchWhenAvailable(this);
-        return 0L;
+//        batchTransferQueue.consumeBatchWhenAvailable(this);
+        Thread.sleep(1000);
+        return 0L; // should not get called
     }
 
     public String getName() {
-        return batchTransferQueue.getName();
+        return "No Queue here";
     }
 
     @Override
