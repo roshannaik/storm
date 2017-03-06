@@ -47,7 +47,7 @@ public class JCQueue implements IStatefulObject {
     private static final Logger LOG = LoggerFactory.getLogger(JCQueue.class);
     private static final Object INTERRUPT = new Object();
     private static final String PREFIX = "disruptor-";
-    private static final JCQueue.FlusherPool FLUSHER = new JCQueue.FlusherPool();
+//    private static final JCQueue.FlusherPool FLUSHER = new JCQueue.FlusherPool();
 
     private static int getNumFlusherPoolThreads() {
         int numThreads = 100;
@@ -234,11 +234,11 @@ public class JCQueue implements IStatefulObject {
         }
 
         public void start() {
-            FLUSHER.start(this, _flushInterval);
+//            FLUSHER.start(this, _flushInterval);
         }
 
         public void close() {
-            FLUSHER.stop(this, _flushInterval);
+//            FLUSHER.stop(this, _flushInterval);
         }
     }
 

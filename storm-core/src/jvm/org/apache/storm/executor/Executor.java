@@ -231,7 +231,8 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         setupTicks(StatsUtil.SPOUT.equals(type));
 
         LOG.info("Finished loading executor " + componentId + ":" + executorId);
-        return new ExecutorShutdown(this, Lists.newArrayList(systemThreads, handlers), idToTask);
+//        return new ExecutorShutdown(this, Lists.newArrayList(systemThreads, handlers), idToTask);
+        return new ExecutorShutdown(this, Lists.newArrayList(handlers), idToTask);
     }
 
     public abstract void tupleActionFn(int taskId, TupleImpl tuple) throws Exception;
