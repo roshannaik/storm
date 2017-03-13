@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.locks.LockSupport;
 
 public class BoltExecutor extends Executor {
 
@@ -92,7 +93,9 @@ public class BoltExecutor extends Executor {
         return new Callable<Object>() {
             @Override
             public Object call() throws Exception {
-                receiveQueue.consumeBatchWhenAvailable(BoltExecutor.this);
+                int count = receiveQueue.consumeBatchWhenAvailable(BoltExecutor.this);
+                if(count==0)
+                    LockSupport.parkNanos(5_000);
                 return 0L;
             }
         };
