@@ -222,8 +222,8 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         LOG.info("Loading executor tasks " + componentId + ":" + executorId);
 
         registerBackpressure();
-        Utils.SmartThread systemThreads =
-                Utils.asyncLoop(executorTransfer, executorTransfer.getName(), reportErrorDie);
+//        Utils.SmartThread systemThreads =
+//                Utils.asyncLoop(executorTransfer, executorTransfer.getName(), reportErrorDie);
 
         String handlerName = componentId + "-executor" + executorId;
         Utils.SmartThread handlers =

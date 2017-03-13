@@ -128,23 +128,27 @@ public class JCQueue implements IStatefulObject {
     }
 
     private class ThreadLocalJustInserter implements JCQueue.ThreadLocalInserter {
-        private final ConcurrentLinkedQueue<Object> _overflow;
+//        private final ConcurrentLinkedQueue<Object> _overflow = new ConcurrentLinkedQueue<>();;
 
         public ThreadLocalJustInserter() {
-            _overflow = new ConcurrentLinkedQueue<>();
         }
 
         //called by the main thread and should not block for an undefined period of time
         public void add(Object obj) throws InterruptedException {
-            boolean inserted = false;
-            if (_overflow.isEmpty()) {
+            boolean inserted = publishDirectSingle(obj, false);
+            while(!inserted) {
+                LockSupport.parkNanos(1);
                 inserted = publishDirectSingle(obj, false);
-            }
 
-            if (!inserted) {
-                _overflowCount.incrementAndGet();
-                _overflow.add(obj);
             }
+//            if (_overflow.isEmpty()) {
+//                inserted = publishDirectSingle(obj, false);
+//            }
+
+//            if (!inserted) {
+//                _overflowCount.incrementAndGet();
+//                _overflow.add(obj);
+//            }
         }
 
         //May be called by a background thread
@@ -154,58 +158,65 @@ public class JCQueue implements IStatefulObject {
 
         // flush() is called by Flusher thd only.. so no locks needed
         public void flush(boolean block) throws InterruptedException {
-            while (!_overflow.isEmpty()) {
-                if (publishDirectSingle(_overflow.peek(), block)) {
-                    _overflowCount.addAndGet(-1);
-                    _overflow.poll();
-                } else {
-                    break;
-                }
-            }
+//            while (!_overflow.isEmpty()) {
+//                if (publishDirectSingle(_overflow.peek(), block)) {
+//                    _overflowCount.addAndGet(-1);
+//                    _overflow.poll();
+//                } else {
+//                    break;
+//                }
+//            }
         }
     }
 
     private class ThreadLocalBatcher implements ThreadLocalInserter {
-        private final ConcurrentLinkedQueue<ArrayList<Object>> _overflow;
+//        private final ConcurrentLinkedQueue<ArrayList<Object>> _overflow;
         private ArrayList<Object> _currentBatch;
 
         public ThreadLocalBatcher() {
-            _overflow = new ConcurrentLinkedQueue<ArrayList<Object>>();
+//            _overflow = new ConcurrentLinkedQueue<ArrayList<Object>>();
             _currentBatch = new ArrayList<>(_inputBatchSize);
         }
 
         public synchronized void add(Object obj) {
             _currentBatch.add(obj);
-            _overflowCount.incrementAndGet();
+//            _overflowCount.incrementAndGet();
 
             if (_currentBatch.size() >= _inputBatchSize) {
-                boolean flushed = false;
-                if (_overflow.isEmpty()) {
-                    int publishCount = publishDirect(_currentBatch, false);
-                    _currentBatch.subList(0, publishCount).clear(); // remove published elements
-                    _overflowCount.addAndGet(0 - publishCount);
-                    flushed = (_currentBatch.size() < _inputBatchSize);
+                int publishCount = publishDirect(_currentBatch, true);
+                _currentBatch.subList(0, publishCount).clear();
+                while (!_currentBatch.isEmpty()) {
+                    LockSupport.parkNanos(1);
+                    publishCount = publishDirect(_currentBatch, true);
+                    _currentBatch.subList(0, publishCount).clear();
                 }
-
-                if (!flushed) {
-                    _overflow.add(_currentBatch);
-                    _currentBatch = new ArrayList<>(_inputBatchSize);
-                }
+//                boolean flushed = false;
+//                if (_overflow.isEmpty()) {
+//                    int publishCount = publishDirect(_currentBatch, false);
+//                    _currentBatch.subList(0, publishCount).clear(); // remove published elements
+////                    _overflowCount.addAndGet(0 - publishCount);
+//                    flushed = (_currentBatch.size() < _inputBatchSize);
+//                }
+//
+//                if (!flushed) {
+//                    _overflow.add(_currentBatch);
+//                    _currentBatch = new ArrayList<>(_inputBatchSize);
+//                }
             }
         }
 
         public synchronized void forceBatch() {
-            if (!_currentBatch.isEmpty()) {
-                _overflow.add(_currentBatch);
-                _currentBatch = new ArrayList<>(_inputBatchSize);
-            }
+//            if (!_currentBatch.isEmpty()) {
+//                _overflow.add(_currentBatch);
+//                _currentBatch = new ArrayList<>(_inputBatchSize);
+//            }
         }
 
         public void flush(boolean block) {
-            while (!_overflow.isEmpty()) {
-                publishDirect(_overflow.peek(), block);
-                _overflowCount.addAndGet(0 - _overflow.poll().size());
-            }
+//            while (!_overflow.isEmpty()) {
+//                publishDirect(_overflow.peek(), block);
+//                _overflowCount.addAndGet(0 - _overflow.poll().size());
+//            }
         }
 
 
@@ -248,6 +259,9 @@ public class JCQueue implements IStatefulObject {
     public class QueueMetrics {
         private final RateTracker _rateTracker = new RateTracker(10000, 10);
 
+        private final RunningStat drainCount =  new RunningStat();
+        private final RunningStat publishCount =  new RunningStat();
+
         public long writePos() {
             return _buffer.size();
         }
@@ -257,7 +271,7 @@ public class JCQueue implements IStatefulObject {
         }
 
         public long overflow() {
-            return _overflowCount.get();
+            return 0;
         }
 
         public long population() {
@@ -292,8 +306,9 @@ public class JCQueue implements IStatefulObject {
             state.put("read_pos", rp);
             state.put("arrival_rate_secs", arrivalRateInSecs);
             state.put("sojourn_time_ms", sojournTime); //element sojourn time in milliseconds
-            state.put("overflow", _overflowCount.get());
-
+            state.put("overflow", 0);
+            state.put("drainCountAvg", drainCount.mean());
+            state.put("publishCountAvg", publishCount.mean());
             return state;
         }
 
@@ -301,16 +316,25 @@ public class JCQueue implements IStatefulObject {
             _rateTracker.notify(counts);
         }
 
+        public void notifyDrain(int count) {
+            drainCount.push(count);
+        }
+
+        public void notifyPublish(int count) {
+            publishCount.push(count);
+        }
+
         public void close() {
             _rateTracker.close();
         }
+
     }
 
     private final ConcurrentCircularArrayQueue<Object> _buffer;
 
     private final int _inputBatchSize;
     private final ConcurrentHashMap<Long, JCQueue.ThreadLocalInserter> _batchers = new ConcurrentHashMap<>();
-    private final JCQueue.Flusher _flusher;
+//    private final JCQueue.Flusher _flusher;
     private final JCQueue.QueueMetrics _metrics;
 
     private String _queueName = "";
@@ -318,7 +342,7 @@ public class JCQueue implements IStatefulObject {
     private int _highWaterMark = 0;
     private int _lowWaterMark = 0;
 
-    private final AtomicLong _overflowCount = new AtomicLong(0);
+//    private final AtomicLong _overflowCount = new AtomicLong(0);
 
     public JCQueue(String queueName, ProducerType type, int size, long readTimeout, int inputBatchSize, long flushInterval) {
         this(queueName, type==ProducerType.SINGLE ? ProducerKind.SINGLE : ProducerKind.MULTI, size, readTimeout, inputBatchSize, flushInterval);
@@ -342,8 +366,8 @@ public class JCQueue implements IStatefulObject {
         //This is mostly to avoid contention issues.
         _inputBatchSize = Math.max(1, Math.min(inputBatchSize, size/2));
 
-        _flusher = new JCQueue.Flusher(Math.max(flushInterval, 5), _queueName);
-        _flusher.start();
+//        _flusher = new JCQueue.Flusher(Math.max(flushInterval, 5), _queueName);
+//        _flusher.start();
     }
 
     public String getName() {
@@ -351,13 +375,13 @@ public class JCQueue implements IStatefulObject {
     }
 
     public boolean isFull() {
-        return (_metrics.population() + _overflowCount.get()) >= _metrics.capacity();
+        return (_metrics.population() + 0) >= _metrics.capacity();
     }
 
     public void haltWithInterrupt() {
         try {
             if( publishDirectSingle(INTERRUPT, false) ){
-                _flusher.close();
+//                _flusher.close();
                 _metrics.close();
             } else {
                 throw new RuntimeException(new QueueFullException());
@@ -367,22 +391,23 @@ public class JCQueue implements IStatefulObject {
         }
     }
 
-    public void consumeBatch(JCQueue.Consumer handler) {
-        if (_metrics.population() > 0) {
-            consumeBatchWhenAvailable(handler);
-        }
+    public int consumeBatch(JCQueue.Consumer handler) {
+//        if (_metrics.population() > 0) {
+            return consumeBatchWhenAvailable(handler);
+//        }
+//        return 0;
     }
 
-    public void consumeBatchWhenAvailable(JCQueue.Consumer handler) {
+    public int consumeBatchWhenAvailable(Consumer handler) {
         try {
-            consumeBatchToCursor(handler);
+            return consumeBatchToCursor(handler);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
 
 
-    private void consumeBatchToCursor(JCQueue.Consumer consumer) throws InterruptedException {
+    private int consumeBatchToCursor(Consumer consumer) throws InterruptedException {
         int count = _buffer.drain(
                 obj -> {
                     try {
@@ -395,9 +420,8 @@ public class JCQueue implements IStatefulObject {
                     }
                 });
         consumer.flush();;
-
-        if(count==0)
-            LockSupport.parkNanos(1);
+        _metrics.notifyDrain(count);
+        return count;
     }
 
 
@@ -412,6 +436,7 @@ public class JCQueue implements IStatefulObject {
     private boolean publishDirectSingle(Object obj, boolean block) throws InterruptedException {
         if( _buffer.offer(obj) ) {
             _metrics.notifyArrivals(1);
+            _metrics.notifyPublish(1);
             return true;
         } else {
             LockSupport.parkNanos(1);;
@@ -431,7 +456,10 @@ public class JCQueue implements IStatefulObject {
                         return objs.get(i++);
                     }
                 };
-        return  _buffer.fill(supplier, objs.size() );
+        int count = _buffer.fill(supplier, objs.size());
+        _metrics.notifyArrivals(count);
+        _metrics.notifyPublish(count);
+        return count;
     }
 
 

@@ -134,7 +134,7 @@ public class SpoutExecutor extends Executor {
                 receiveQueue.consumeBatch(SpoutExecutor.this);
 
                 long currCount = emittedCount.get();
-                boolean throttleOn = backPressureEnabled && SpoutExecutor.this.throttleOn.get();
+                boolean throttleOn = false; //backPressureEnabled && SpoutExecutor.this.throttleOn.get();
                 boolean reachedMaxSpoutPending = (maxSpoutPending != 0) && (pending.size() >= maxSpoutPending);
                 boolean isActive = stormActive.get();
                 if (isActive) {
@@ -145,7 +145,7 @@ public class SpoutExecutor extends Executor {
                             spout.activate();
                         }
                     }
-                    if (!transferQueue.isFull() && !throttleOn && !reachedMaxSpoutPending) {
+                    if (/*!transferQueue.isFull() && */ !throttleOn && !reachedMaxSpoutPending) {
                         for (ISpout spout : spouts) {
                             spout.nextTuple();
                         }
@@ -159,16 +159,16 @@ public class SpoutExecutor extends Executor {
                         }
                     }
                     Time.sleep(100);
-                    spoutThrottlingMetrics.skippedInactive(stats);
+//                    spoutThrottlingMetrics.skippedInactive(stats);
                 }
                 if (currCount == emittedCount.get() && isActive) {
                     emptyEmitStreak.increment();
                     spoutWaitStrategy.emptyEmit(emptyEmitStreak.get());
-                    if (throttleOn) {
-                        spoutThrottlingMetrics.skippedThrottle(stats);
-                    } else if (reachedMaxSpoutPending) {
-                        spoutThrottlingMetrics.skippedMaxSpout(stats);
-                    }
+//                    if (throttleOn) {
+//                        spoutThrottlingMetrics.skippedThrottle(stats);
+//                    } else if (reachedMaxSpoutPending) {
+//                        spoutThrottlingMetrics.skippedMaxSpout(stats);
+//                    }
                 } else {
                     emptyEmitStreak.set(0);
                 }
