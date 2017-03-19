@@ -88,11 +88,15 @@ public class Helper {
     cluster.shutdown();
   }
 
-    public static LocalCluster runOnLocalCluster(String topoName, StormTopology topology) throws Exception {
-        LocalCluster cluster = new LocalCluster();
-        cluster.submitTopology(topoName, new Config(), topology);
-        return cluster;
-    }
+  public static LocalCluster runOnLocalCluster(String topoName, StormTopology topology) throws Exception {
+      return runOnLocalCluster(topoName, topology, new Config());
+  }
+
+  public static LocalCluster runOnLocalCluster(String topoName, StormTopology topology, Config conf) throws Exception {
+    LocalCluster cluster = new LocalCluster();
+    cluster.submitTopology(topoName,conf, topology);
+    return cluster;
+  }
 
     public static int getInt(Map map, Object key, int def) {
         return Utils.getInt(Utils.get(map, key, def));

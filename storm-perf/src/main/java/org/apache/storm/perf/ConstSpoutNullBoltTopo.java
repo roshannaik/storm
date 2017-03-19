@@ -43,13 +43,13 @@ public class ConstSpoutNullBoltTopo {
     public static final String SPOUT_COUNT = "spout.count";
     public static final String GROUPING = "grouping";
 
-    public static StormTopology getTopology(Map conf) {
+    public static StormTopology getTopology(Map conf, int printFreq) {
 
         // 1 -  Setup HDFS Spout   --------
         ConstSpout spout = new ConstSpout("some data").withOutputFields("str");
 
         // 2 -  Setup DevNull Bolt   --------
-        DevNullBolt bolt = new DevNullBolt();
+        DevNullBolt bolt = new DevNullBolt(printFreq);
 
 
         // 3 - Setup Topology  --------
@@ -73,16 +73,20 @@ public class ConstSpoutNullBoltTopo {
         if(args.length <= 0) {
             // submit topology to local cluster
             Config conf = new Config();
-            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf));
+            conf.setNumAckers(0);
+            int printFreq = 20_000_000;
+//            int printFreq = 10_000_000;
+
+            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf, printFreq), conf);
             Thread.sleep(20_000_000); // let run for a few seconds
 //            Helper.killAndExit(cluster, TOPOLOGY_NAME);
         } else {
             Integer duration = Integer.parseInt(args[0]);  // in seconds
             Integer pollInterval = 60; // in seconds
-
+            int printFreq = Integer.parseInt(args[1]);
             // submit to real cluster
             Map stormConf = Utils.readStormConfig();
-            StormSubmitter.submitTopologyWithProgressBar(TOPOLOGY_NAME, stormConf, getTopology(stormConf) );
+            StormSubmitter.submitTopologyWithProgressBar(TOPOLOGY_NAME, stormConf, getTopology(stormConf,printFreq) );
             Helper.collectMetricsAndKill(TOPOLOGY_NAME, pollInterval, duration, stormConf);
         }
     }
