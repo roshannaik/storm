@@ -41,7 +41,7 @@ public class ConstSpoutIDBoltNullBolt {
     public static final String BOLT2_COUNT = "bolt2.count";
     public static final String SPOUT_COUNT = "spout.count";
 
-    public static StormTopology getTopology(Map conf) {
+    public static StormTopology getTopology(Map conf, int printFreq) {
 
         // 1 -  Setup Spout   --------
         ConstSpout spout = new ConstSpout("some data").withOutputFields("str");
@@ -49,7 +49,7 @@ public class ConstSpoutIDBoltNullBolt {
         // 2 -  Setup IdBolt 7 DevNullBolt   --------
         IdBolt bolt1 = new IdBolt();
 
-        DevNullBolt bolt2 = new DevNullBolt();
+        DevNullBolt bolt2 = new DevNullBolt(printFreq);
 
 
         // 3 - Setup Topology  --------
@@ -74,7 +74,11 @@ public class ConstSpoutIDBoltNullBolt {
         if(args.length <= 0) {
             // submit topology to local cluster
             Config conf = new Config();
-            Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf));
+//            conf.setNumAckers(0);
+//            int printFreq = 15_000_000;
+            int printFreq = 6_000_000;
+
+            Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf,printFreq), conf);
 
             while(true) {  // run indefinitely
                 Thread.sleep(20_000_000);
@@ -83,9 +87,10 @@ public class ConstSpoutIDBoltNullBolt {
             Integer duration = Integer.parseInt(args[0]);  // in seconds
             Integer pollInterval = 60; // in seconds
 
+            int printFreq = Integer.parseInt(args[1]);
             // submit to real cluster
             Map stormConf = Utils.readStormConfig();
-            StormSubmitter.submitTopologyWithProgressBar(TOPOLOGY_NAME, stormConf, getTopology(stormConf) );
+            StormSubmitter.submitTopologyWithProgressBar(TOPOLOGY_NAME, stormConf, getTopology(stormConf,printFreq) );
             Helper.collectMetricsAndKill(TOPOLOGY_NAME, pollInterval, duration, stormConf);
         }
     }

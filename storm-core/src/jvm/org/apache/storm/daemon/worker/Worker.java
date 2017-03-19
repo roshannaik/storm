@@ -204,7 +204,9 @@ public class Worker implements Shutdownable, DaemonCommon {
 
                 // This thread will publish the messages destined for remote tasks to remote connections
                 transferThread = Utils.asyncLoop(() -> {
-                    workerState.transferQueue.consumeBatchWhenAvailable(tupleHandler);
+                    int x = workerState.transferQueue.consumeBatchWhenAvailable(tupleHandler);
+                    if(x==0)
+                        return 1L;
                     return 0L;
                 });
 

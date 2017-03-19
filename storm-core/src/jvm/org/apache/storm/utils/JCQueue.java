@@ -18,8 +18,8 @@
 
 package org.apache.storm.utils;
 
-// TODO : Remove overflow Q (and corresponding locks), and introduce backPressure along with it
-// TODO : Support wait strategy
+// TODO : Support wait/sleep strategy for both drain and fill side
+// TODO: Remove return 1L in Worker.java
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.lmax.disruptor.dsl.ProducerType;

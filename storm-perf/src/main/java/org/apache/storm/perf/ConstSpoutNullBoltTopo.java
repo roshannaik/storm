@@ -51,13 +51,13 @@ public class ConstSpoutNullBoltTopo {
     public static final String SHUFFLE_GROUPING = "shuffle";
     public static final String DEFAULT_GROUPING = LOCAL_GROPING;
 
-    public static StormTopology getTopology(Map conf) {
+    public static StormTopology getTopology(Map conf, int printFreq) {
 
         // 1 -  Setup Spout   --------
         ConstSpout spout = new ConstSpout("some data").withOutputFields("str");
 
         // 2 -  Setup DevNull Bolt   --------
-        DevNullBolt bolt = new DevNullBolt();
+        DevNullBolt bolt = new DevNullBolt(printFreq);
 
 
         // 3 - Setup Topology  --------
@@ -78,11 +78,14 @@ public class ConstSpoutNullBoltTopo {
      * ConstSpout -> DevNullBolt with configurable grouping (default localOrShuffle)
      */
     public static void main(String[] args) throws Exception {
-
+        int printFreq = 20_000_000;
+        
         if(args.length <= 0) {
             // For IDE based profiling ... submit topology to local cluster
             Config conf = new Config();
-            final LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf));
+            conf.setNumAckers(0);
+
+            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf, printFreq), conf);
 
             Helper.setupShutdownHook(cluster, TOPOLOGY_NAME);
             while (true) {//  run indefinitely till Ctrl-C
@@ -98,7 +101,7 @@ public class ConstSpoutNullBoltTopo {
             Map topoConf =  (args.length==2) ? Utils.findAndReadConfigFile(args[1])  : new Config();
 
             //  Submit topology to storm cluster
-            Helper.runOnClusterAndPrintMetrics(durationSec, TOPOLOGY_NAME, topoConf, getTopology(topoConf));
+            Helper.runOnClusterAndPrintMetrics(durationSec, TOPOLOGY_NAME, topoConf, getTopology(topoConf, printFreq));
         }
     }
 
