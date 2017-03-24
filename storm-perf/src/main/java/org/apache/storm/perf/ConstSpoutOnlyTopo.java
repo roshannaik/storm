@@ -18,6 +18,7 @@
 
 package org.apache.storm.perf;
 
+import org.apache.storm.Config;
 import org.apache.storm.LocalCluster;
 import org.apache.storm.StormSubmitter;
 import org.apache.storm.generated.StormTopology;
@@ -52,9 +53,12 @@ public class ConstSpoutOnlyTopo {
     public static void main(String[] args) throws Exception {
         if(args.length <= 0) {
             // submit topology to local cluster
-            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology());
-            Thread.sleep(20000); // let run for a few seconds
-            Helper.killAndExit(cluster, TOPOLOGY_NAME);
+            Config conf = new Config();
+//            conf.setNumAckers(0);
+            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(), conf);
+            while (true)
+                    Thread.sleep(40000); // let run for a few seconds
+//            Helper.killAndExit(cluster, TOPOLOGY_NAME);
         } else {
             Integer pollInterval = Integer.parseInt(args[0]); // in seconds
             Integer duration = Integer.parseInt(args[1]);  // in seconds

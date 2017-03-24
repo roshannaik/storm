@@ -49,7 +49,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class SpoutExecutor extends Executor {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpoutExecutor.class);
-
+    RunningStat latencySampled;
     private final ISpoutWaitStrategy spoutWaitStrategy;
     private Integer maxSpoutPending;
     private final AtomicBoolean lastActive;
@@ -77,6 +77,7 @@ public class SpoutExecutor extends Executor {
     }
 
     public void init(final Map<Integer, Task> idToTask) {
+        latencySampled = new RunningStat("[SAMPLED] Latency", 500_000);
         while (!stormActive.get()) {
             Utils.sleep(100);
         }
@@ -111,7 +112,8 @@ public class SpoutExecutor extends Executor {
             this.outputCollectors.add(outputCollector);
 
             taskData.getBuiltInMetrics().registerAll(stormConf, taskData.getUserContext());
-            Map<String, JCQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue);
+//            Map<String, JCQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue);
+            Map<String, JCQueue> map = ImmutableMap.of("receive", receiveQueue);
             BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, taskData.getUserContext());
 
             if (spoutObject instanceof ICredentialsListener) {
@@ -127,14 +129,20 @@ public class SpoutExecutor extends Executor {
     @Override
     public Callable<Object> call() throws Exception {
         init(idToTask);
-
+        RunningStat spoutConsCount = new RunningStat("Spout Avg consume count", 1_000_000, true);
         return new Callable<Object>() {
+            int i = 0;
             @Override
             public Object call() throws Exception {
-                receiveQueue.consumeBatch(SpoutExecutor.this);
+                long start = System.currentTimeMillis();
+                if( i==0 ) {
+                   int x = receiveQueue.consumeBatch(SpoutExecutor.this);
+                    spoutConsCount.push(x);
+                }
+                if(++i==8) i=0;
 
                 long currCount = emittedCount.get();
-                boolean throttleOn = false; //backPressureEnabled && SpoutExecutor.this.throttleOn.get();
+//                boolean throttleOn = false; //backPressureEnabled && SpoutExecutor.this.throttleOn.get();
                 boolean reachedMaxSpoutPending = (maxSpoutPending != 0) && (pending.size() >= maxSpoutPending);
                 boolean isActive = stormActive.get();
                 if (isActive) {
@@ -145,7 +153,7 @@ public class SpoutExecutor extends Executor {
                             spout.activate();
                         }
                     }
-                    if (/*!transferQueue.isFull() && */ !throttleOn && !reachedMaxSpoutPending) {
+                    if (/*!transferQueue.isFull() && !throttleOn && */ !reachedMaxSpoutPending) {
                         for (ISpout spout : spouts) {
                             spout.nextTuple();
                         }
@@ -172,6 +180,7 @@ public class SpoutExecutor extends Executor {
                 } else {
                     emptyEmitStreak.set(0);
                 }
+                long end = System.currentTimeMillis();
                 return 0L;
             }
         };
@@ -225,8 +234,10 @@ public class SpoutExecutor extends Executor {
                 LOG.info("SPOUT Acking message {} {}", tupleInfo.getId(), tupleInfo.getMessageId());
             }
             spout.ack(tupleInfo.getMessageId());
-            new SpoutAckInfo(tupleInfo.getMessageId(), taskId, timeDelta).applyOn(taskData.getUserContext());
-            if (timeDelta != null) {
+            if (!taskData.getUserContext().getHooks().isEmpty()) // avoid allocating SpoutAckInfo obj if not necessary
+                new SpoutAckInfo(tupleInfo.getMessageId(), taskId, timeDelta).applyOn(taskData.getUserContext());
+            if (timeDelta != null && hasAckers) {
+                latencySampled.push(timeDelta);
                 ((SpoutExecutorStats) executor.getStats()).spoutAckedTuple(tupleInfo.getStream(), timeDelta);
             }
         } catch (Exception e) {

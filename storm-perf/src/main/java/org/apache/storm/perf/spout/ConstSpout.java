@@ -24,6 +24,7 @@ import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichSpout;
 import org.apache.storm.tuple.Fields;
+import org.apache.storm.utils.ThroughputMeter;
 
 import java.util.Collections;
 import java.util.List;
@@ -31,11 +32,14 @@ import java.util.Map;
 
 public class ConstSpout extends BaseRichSpout {
 
-    private static final String DEFAUT_FIELD_NAME = "str";
+    private static final String DEFAULT_FIELD_NAME = "str";
     private String value;
-    private String fieldName = DEFAUT_FIELD_NAME;
+    private String fieldName = DEFAULT_FIELD_NAME;
     private SpoutOutputCollector collector = null;
     private int count=0;
+    private ThroughputMeter emitMeter = null;
+    private ThroughputMeter commitMeter = null;
+
 
     public ConstSpout(String value) {
         this.value = value;
@@ -53,6 +57,8 @@ public class ConstSpout extends BaseRichSpout {
 
     @Override
     public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
+        commitMeter = new ThroughputMeter("Const Spout ACKs", 15_000_000);
+        emitMeter = new ThroughputMeter("Const Spout emits", 15_000_000);
         this.collector = collector;
     }
 
@@ -60,11 +66,13 @@ public class ConstSpout extends BaseRichSpout {
     public void nextTuple() {
         List<Object> tuple = Collections.singletonList((Object) value);
         collector.emit(tuple, count++);
+        emitMeter.record();
     }
 
     @Override
     public void ack(Object msgId) {
         super.ack(msgId);
+        commitMeter.record();
     }
 
 }

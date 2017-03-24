@@ -45,10 +45,11 @@ public class BoltExecutor extends Executor {
     private static final Logger LOG = LoggerFactory.getLogger(BoltExecutor.class);
 
     private final Callable<Boolean> executeSampler;
-
+    private final boolean isSystemBoltExecutor;
     public BoltExecutor(WorkerState workerData, List<Long> executorId, Map<String, String> credentials) {
         super(workerData, executorId, credentials);
         this.executeSampler = ConfigUtils.mkStatsSampler(stormConf);
+        isSystemBoltExecutor =  (executorId == Constants.SYSTEM_EXECUTOR_ID );
     }
 
     public void init(Map<Integer, Task> idToTask) {
@@ -66,7 +67,7 @@ public class BoltExecutor extends Executor {
                 ((ICredentialsListener) boltObject).setCredentials(credentials);
             }
             if (Constants.SYSTEM_COMPONENT_ID.equals(componentId)) {
-                Map<String, JCQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue,
+                Map<String, JCQueue> map = ImmutableMap.of(/*"sendqueue", transferQueue, */"receive", receiveQueue,
                         "transfer", workerData.getTransferQueue());
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
 
@@ -74,7 +75,7 @@ public class BoltExecutor extends Executor {
                 BuiltinMetricsUtil.registerIconnectionClientMetrics(cachedNodePortToSocket, stormConf, userContext);
                 BuiltinMetricsUtil.registerIconnectionServerMetric(workerData.getReceiver(), stormConf, userContext);
             } else {
-                Map<String, JCQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue);
+                Map<String, JCQueue> map = ImmutableMap.of(/*"sendqueue", transferQueue, */"receive", receiveQueue);
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
             }
 
@@ -91,18 +92,26 @@ public class BoltExecutor extends Executor {
         init(idToTask);
 
         return new Callable<Object>() {
+//            RunningStat latency = new RunningStat("ACK Bolt full latency");
+            RunningStat avgConsumeCount = new RunningStat("BOLT Avg consume count", 500_000);
             @Override
             public Object call() throws Exception {
+                long start = System.currentTimeMillis();
                 int count = receiveQueue.consumeBatchWhenAvailable(BoltExecutor.this);
+                long parkTimeNanoSec = isSystemBoltExecutor ? 50_000_000 : 1;
                 if(count==0)
-                    LockSupport.parkNanos(5_000);
+                    LockSupport.parkNanos(parkTimeNanoSec);
+//                latency.pushLatency(start);
+                avgConsumeCount.push(count);
                 return 0L;
             }
         };
     }
 
+    RunningStat latency = new RunningStat(getComponentId() + " Latency");
     @Override
     public void tupleActionFn(int taskId, TupleImpl tuple) throws Exception {
+        long start = System.currentTimeMillis();
         String streamId = tuple.getSourceStreamId();
         if (Constants.CREDENTIALS_CHANGED_STREAM_ID.equals(streamId)) {
             Object taskObject = idToTask.get(taskId).getTaskObject();
@@ -122,6 +131,7 @@ public class BoltExecutor extends Executor {
             if (isExecuteSampler) {
                 tuple.setExecuteSampleStartTime(now);
             }
+
             boltObject.execute(tuple);
 
             Long ms = tuple.getExecuteSampleStartTime();
@@ -134,6 +144,7 @@ public class BoltExecutor extends Executor {
                 ((BoltExecutorStats) stats).boltExecuteTuple(tuple.getSourceComponent(), tuple.getSourceStreamId(), delta);
             }
         }
+//        latency.pushLatency(start);
     }
 
 }

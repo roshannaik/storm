@@ -78,7 +78,7 @@ public class ExecutorShutdown implements Shutdownable, IRunningExecutor {
         try {
             LOG.info("Shutting down executor " + executor.getComponentId() + ":" + executor.getExecutorId());
             executor.getReceiveQueue().haltWithInterrupt();
-            executor.getTransferWorkerQueue().haltWithInterrupt();
+//            executor.getTransferWorkerQueue().haltWithInterrupt();
             for (Utils.SmartThread t : threads) {
                 t.interrupt();
             }

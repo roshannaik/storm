@@ -138,7 +138,7 @@ public class GrouperFactory {
     public static class FieldsGrouper implements CustomStreamGrouping {
 
         private Fields outFields;
-        private List<Integer> targetTasks;
+        private ArrayList<List<Integer> > targetTasks;
         private Fields groupFields;
         private int numTasks;
 
@@ -150,14 +150,17 @@ public class GrouperFactory {
 
         @Override
         public void prepare(WorkerTopologyContext context, GlobalStreamId stream, List<Integer> targetTasks) {
-            this.targetTasks = targetTasks;
+            this.targetTasks = new ArrayList<List<Integer>>();
+            for (Integer targetTask : targetTasks) {
+                this.targetTasks.add(Collections.singletonList(targetTask));
+            }
             this.numTasks = targetTasks.size();
         }
 
         @Override
         public List<Integer> chooseTasks(int taskId, List<Object> values) {
             int targetTaskIndex = TupleUtils.chooseTaskIndex(outFields.select(groupFields, values), numTasks);
-            return Collections.singletonList(targetTasks.get(targetTaskIndex));
+            return targetTasks.get(targetTaskIndex);
         }
 
     }
