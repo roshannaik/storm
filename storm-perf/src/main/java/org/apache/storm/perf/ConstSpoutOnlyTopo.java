@@ -54,8 +54,9 @@ public class ConstSpoutOnlyTopo {
     public static void main(String[] args) throws Exception {
         if(args.length <= 0) {
             // For IDE based profiling ... submit topology to local cluster
-            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology());
-
+            Config conf = new Config();
+//            conf.setNumAckers(0);
+            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(), conf);
             Helper.setupShutdownHook(cluster, TOPOLOGY_NAME);
             while (true) {//  run indefinitely till Ctrl-C
                 Thread.sleep(20_000_000);

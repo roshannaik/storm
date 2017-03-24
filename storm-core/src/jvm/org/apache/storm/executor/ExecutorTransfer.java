@@ -52,7 +52,7 @@ public class ExecutorTransfer implements JCQueue.Consumer, Callable {
     HashMap<Integer, List<AddressedTuple>> localMap = new HashMap<>();
     HashMap<Integer, List<TaskMessage>> remoteMap  = new HashMap<>();
 
-    public ExecutorTransfer(WorkerState workerData, JCQueue batchTransferQueue, Map stormConf) {
+    public ExecutorTransfer(WorkerState workerData, Map stormConf) {
         this.workerData = workerData;
 //        this.batchTransferQueue = batchTransferQueue;
         this.stormConf = stormConf;
@@ -70,7 +70,8 @@ public class ExecutorTransfer implements JCQueue.Consumer, Callable {
         accept(addressedTuple);
         ++currBatchSz;
         if(currBatchSz>=producerBatchSz) {
-            flush();
+            flush(); // TODO: Roshan: flush needs to be called on timeout also
+            currBatchSz=0;
         }
 //        batchTransferQueue.publish(val);
     }

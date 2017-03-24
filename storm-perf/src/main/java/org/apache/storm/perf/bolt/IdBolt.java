@@ -25,21 +25,25 @@ import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
+import org.apache.storm.utils.ThroughputMeter;
 
 import java.util.Map;
 
 public class IdBolt extends BaseRichBolt {
     private OutputCollector collector;
+    private ThroughputMeter meter= null;
 
     @Override
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
+        this.meter = new ThroughputMeter("ID Bolt", 6_000_000);
     }
 
     @Override
     public void execute(Tuple tuple) {
         collector.emit(tuple, new Values( tuple.getValues() ) );
         collector.ack(tuple);
+        meter.record();
     }
 
     @Override

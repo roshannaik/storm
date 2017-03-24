@@ -22,9 +22,7 @@ import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
-import org.apache.storm.utils.RotatingMap;
-import org.apache.storm.utils.TupleUtils;
-import org.apache.storm.utils.Utils;
+import org.apache.storm.utils.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,21 +50,28 @@ public class Acker implements IBolt {
         public Integer spoutTask = null;
         public boolean failed = false;
         public long startTime = System.currentTimeMillis();
-
         // val xor value
         public void updateAck(Long value) {
             val = Utils.bitXor(val, value);
         }
     }
 
+    ThroughputMeter meter = null;
+    RunningStat latency = null;
+
     @Override
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
         this.pending = new RotatingMap<Object, AckObject>(TIMEOUT_BUCKET_NUM);
+        latency = new RunningStat("ACKer latency",true);
     }
 
     @Override
     public void execute(Tuple input) {
+        if(meter==null)
+            meter = new ThroughputMeter("ACKer", 10_000_000);
+        meter.record();
+        long start = System.currentTimeMillis();
         if (TupleUtils.isTick(input)) {
             Map<Object, AckObject> tmp = pending.rotate();
             LOG.debug("Number of timeout tuples:{}", tmp.size());
@@ -121,12 +126,13 @@ public class Acker implements IBolt {
             } else if (curr.failed) {
                 pending.remove(id);
                 collector.emitDirect(task, ACKER_FAIL_STREAM_ID, tuple);
-            } else if(ACKER_RESET_TIMEOUT_STREAM_ID.equals(streamId)) {
+            } else if (ACKER_RESET_TIMEOUT_STREAM_ID.equals(streamId)) {
                 collector.emitDirect(task, ACKER_RESET_TIMEOUT_STREAM_ID, tuple);
             }
         }
 
         collector.ack(input);
+        latency.pushLatency(start);
     }
 
     @Override

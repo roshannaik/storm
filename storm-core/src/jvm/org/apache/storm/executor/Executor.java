@@ -103,7 +103,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     protected final Random rand;
 //    protected final DisruptorQueue transferQueue;
 //    protected final DisruptorQueue receiveQueue;
-    protected final JCQueue transferQueue;
+//    protected final JCQueue transferQueue;
     protected final JCQueue receiveQueue;
 
     protected Map<Integer, Task> idToTask;
@@ -127,8 +127,8 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         this.stormActive = workerData.getIsTopologyActive();
         this.stormComponentDebug = workerData.getStormComponentToDebug();
 
-        this.transferQueue = mkExecutorBatchQueue(stormConf, executorId);
-        this.executorTransfer = new ExecutorTransfer(workerData, transferQueue, stormConf);
+//        this.transferQueue = mkExecutorBatchQueue(stormConf, executorId);
+        this.executorTransfer = new ExecutorTransfer(workerData, stormConf);
 
         this.suicideFn = workerData.getSuicideCallback();
         try {
@@ -221,7 +221,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     public ExecutorShutdown execute() throws Exception {
         LOG.info("Loading executor tasks " + componentId + ":" + executorId);
 
-        registerBackpressure();
+//        registerBackpressure();
 //        Utils.SmartThread systemThreads =
 //                Utils.asyncLoop(executorTransfer, executorTransfer.getName(), reportErrorDie);
 
@@ -563,9 +563,9 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         return receiveQueue.getThrottleOn();
     }
 
-    public JCQueue getTransferWorkerQueue() {
-        return transferQueue;
-    }
+//    public JCQueue getTransferWorkerQueue() {
+//        return transferQueue;
+//    }
 
     public IStormClusterState getStormClusterState() {
         return stormClusterState;

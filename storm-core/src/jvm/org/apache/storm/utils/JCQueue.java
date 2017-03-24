@@ -21,9 +21,7 @@ package org.apache.storm.utils;
 // TODO : Support wait/sleep strategy for both drain and fill side
 // TODO: Remove return 1L in Worker.java
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.lmax.disruptor.dsl.ProducerType;
-import org.apache.storm.Config;
 import org.apache.storm.metric.api.IStatefulObject;
 import org.apache.storm.metric.internal.RateTracker;
 import org.jctools.queues.ConcurrentCircularArrayQueue;
@@ -35,8 +33,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+
 import java.util.concurrent.locks.LockSupport;
 
 
@@ -48,83 +45,10 @@ public class JCQueue implements IStatefulObject {
     private static final Object INTERRUPT = new Object();
     private static final String PREFIX = "disruptor-";
 //    private static final JCQueue.FlusherPool FLUSHER = new JCQueue.FlusherPool();
-
-    private static int getNumFlusherPoolThreads() {
-        int numThreads = 100;
-        try {
-            Map<String, Object> conf = Utils.readStormConfig();
-            numThreads = Utils.getInt(conf.get(Config.STORM_WORKER_DISRUPTOR_FLUSHER_MAX_POOL_SIZE), numThreads);
-        } catch (Exception e) {
-            LOG.warn("Error while trying to read system config", e);
-        }
-        try {
-            String threads = System.getProperty("num_flusher_pool_threads", String.valueOf(numThreads));
-            numThreads = Integer.parseInt(threads);
-        } catch (Exception e) {
-            LOG.warn("Error while parsing number of flusher pool threads", e);
-        }
-        LOG.debug("Reading num_flusher_pool_threads Flusher pool threads: {}", numThreads);
-        return numThreads;
-    }
-
-    private static class FlusherPool {
-        private static final String THREAD_PREFIX = "disruptor-flush";
-        private Timer _timer = new Timer(THREAD_PREFIX + "-trigger", true);
-        private ThreadPoolExecutor _exec;
-        private HashMap<Long, ArrayList<JCQueue.Flusher>> _pendingFlush = new HashMap<>();
-        private HashMap<Long, TimerTask> _tt = new HashMap<>();
-
-        public FlusherPool() {
-            _exec = new ThreadPoolExecutor(1, getNumFlusherPoolThreads(), 10, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(1024), new ThreadPoolExecutor.DiscardPolicy());
-            ThreadFactory threadFactory = new ThreadFactoryBuilder()
-                    .setDaemon(true)
-                    .setNameFormat(THREAD_PREFIX + "-task-pool")
-                    .build();
-            _exec.setThreadFactory(threadFactory);
-        }
-
-        public synchronized void start(JCQueue.Flusher flusher, final long flushInterval) {
-            ArrayList<JCQueue.Flusher> pending = _pendingFlush.get(flushInterval);
-            if (pending == null) {
-                pending = new ArrayList<>();
-                TimerTask t = new TimerTask() {
-                    @Override
-                    public void run() {
-                        invokeAll(flushInterval);
-                    }
-                };
-                _pendingFlush.put(flushInterval, pending);
-                _timer.schedule(t, flushInterval, flushInterval);
-                _tt.put(flushInterval, t);
-            }
-            pending.add(flusher);
-        }
-
-        private synchronized void invokeAll(long flushInterval) {
-            ArrayList<JCQueue.Flusher> tasks = _pendingFlush.get(flushInterval);
-            if (tasks != null) {
-                for (JCQueue.Flusher f: tasks) {
-                    _exec.submit(f);
-                }
-            }
-        }
-
-        public synchronized void stop(JCQueue.Flusher flusher, long flushInterval) {
-            ArrayList<JCQueue.Flusher> pending = _pendingFlush.get(flushInterval);
-            if (pending != null) {
-                pending.remove(flusher);
-                if (pending.size() == 0) {
-                    _pendingFlush.remove(flushInterval);
-                    _tt.remove(flushInterval).cancel();
-                }
-            }
-        }
-    }
+    private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 1_000_000);
 
     private interface ThreadLocalInserter {
-        public void add(Object obj) throws InterruptedException;
-        public void forceBatch();
-        public void flush(boolean block) throws InterruptedException;
+        public void add(Object obj);
     }
 
     private class ThreadLocalJustInserter implements JCQueue.ThreadLocalInserter {
@@ -134,124 +58,53 @@ public class JCQueue implements IStatefulObject {
         }
 
         //called by the main thread and should not block for an undefined period of time
-        public void add(Object obj) throws InterruptedException {
-            boolean inserted = publishDirectSingle(obj, false);
+        public void add(Object obj) {
+            boolean inserted = publishDirectSingle(obj);
             while(!inserted) {
                 LockSupport.parkNanos(1);
-                inserted = publishDirectSingle(obj, false);
+                if(Thread.interrupted())
+                    return;
+                inserted = publishDirectSingle(obj);
 
             }
-//            if (_overflow.isEmpty()) {
-//                inserted = publishDirectSingle(obj, false);
-//            }
-
-//            if (!inserted) {
-//                _overflowCount.incrementAndGet();
-//                _overflow.add(obj);
-//            }
-        }
-
-        //May be called by a background thread
-        public void forceBatch() {
-            //NOOP
-        }
-
-        // flush() is called by Flusher thd only.. so no locks needed
-        public void flush(boolean block) throws InterruptedException {
-//            while (!_overflow.isEmpty()) {
-//                if (publishDirectSingle(_overflow.peek(), block)) {
-//                    _overflowCount.addAndGet(-1);
-//                    _overflow.poll();
-//                } else {
-//                    break;
-//                }
-//            }
         }
     }
 
     private class ThreadLocalBatcher implements ThreadLocalInserter {
 //        private final ConcurrentLinkedQueue<ArrayList<Object>> _overflow;
         private ArrayList<Object> _currentBatch;
+        private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 10_000_000);
 
         public ThreadLocalBatcher() {
 //            _overflow = new ConcurrentLinkedQueue<ArrayList<Object>>();
             _currentBatch = new ArrayList<>(_inputBatchSize);
         }
 
-        public synchronized void add(Object obj) {
+        public void add(Object obj) {
             _currentBatch.add(obj);
-//            _overflowCount.incrementAndGet();
 
             if (_currentBatch.size() >= _inputBatchSize) {
-                int publishCount = publishDirect(_currentBatch, true);
-                _currentBatch.subList(0, publishCount).clear();
-                while (!_currentBatch.isEmpty()) {
-                    LockSupport.parkNanos(1);
-                    publishCount = publishDirect(_currentBatch, true);
-                    _currentBatch.subList(0, publishCount).clear();
-                }
-//                boolean flushed = false;
-//                if (_overflow.isEmpty()) {
-//                    int publishCount = publishDirect(_currentBatch, false);
-//                    _currentBatch.subList(0, publishCount).clear(); // remove published elements
-////                    _overflowCount.addAndGet(0 - publishCount);
-//                    flushed = (_currentBatch.size() < _inputBatchSize);
-//                }
-//
-//                if (!flushed) {
-//                    _overflow.add(_currentBatch);
-//                    _currentBatch = new ArrayList<>(_inputBatchSize);
-//                }
+                flush();
             }
         }
 
-        public synchronized void forceBatch() {
-//            if (!_currentBatch.isEmpty()) {
-//                _overflow.add(_currentBatch);
-//                _currentBatch = new ArrayList<>(_inputBatchSize);
-//            }
+        // Does not return till completely flushed or Thread.interrupted()
+        private void flush( ) {
+            int publishCount = publishDirect(_currentBatch);
+            _currentBatch.subList(0, publishCount).clear();
+            while (!_currentBatch.isEmpty()) { // retry
+                LockSupport.parkNanos(1);
+                if(Thread.interrupted())
+                    return;
+                publishCount = publishDirect(_currentBatch);
+                if (publishCount==0)
+                    fullMeter.record();
+                else
+                    _currentBatch.subList(0, publishCount).clear();
+            }
         }
-
-        public void flush(boolean block) {
-//            while (!_overflow.isEmpty()) {
-//                publishDirect(_overflow.peek(), block);
-//                _overflowCount.addAndGet(0 - _overflow.poll().size());
-//            }
-        }
-
 
     } // class ThreadLocalBatcher
-
-    private class Flusher implements Runnable {
-        private AtomicBoolean _isFlushing = new AtomicBoolean(false);
-        private final long _flushInterval;
-
-        public Flusher(long flushInterval, String name) {
-            _flushInterval = flushInterval;
-        }
-
-        public void run() {
-            try {
-                if (_isFlushing.compareAndSet(false, true)) {
-                    for (JCQueue.ThreadLocalInserter batcher: _batchers.values()) {
-                        batcher.forceBatch();
-                        batcher.flush(true);
-                    }
-                    _isFlushing.set(false);
-                }
-            } catch (InterruptedException e) {
-                return;
-            }
-        }
-
-        public void start() {
-//            FLUSHER.start(this, _flushInterval);
-        }
-
-        public void close() {
-//            FLUSHER.stop(this, _flushInterval);
-        }
-    }
 
     /**
      * This inner class provides methods to access the metrics of the disruptor queue.
@@ -259,8 +112,8 @@ public class JCQueue implements IStatefulObject {
     public class QueueMetrics {
         private final RateTracker _rateTracker = new RateTracker(10000, 10);
 
-        private final RunningStat drainCount =  new RunningStat();
-        private final RunningStat publishCount =  new RunningStat();
+        private final RunningStat drainCount =  new RunningStat("drainCount", 10_000_000, true);
+        private final RunningStat publishCount =  new RunningStat("publishCount", 10_000_000, true);
 
         public long writePos() {
             return _buffer.size();
@@ -379,15 +232,11 @@ public class JCQueue implements IStatefulObject {
     }
 
     public void haltWithInterrupt() {
-        try {
-            if( publishDirectSingle(INTERRUPT, false) ){
+        if( publishDirectSingle(INTERRUPT) ){
 //                _flusher.close();
-                _metrics.close();
-            } else {
-                throw new RuntimeException(new QueueFullException());
-            }
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            _metrics.close();
+        } else {
+            throw new RuntimeException(new QueueFullException());
         }
     }
 
@@ -419,8 +268,10 @@ public class JCQueue implements IStatefulObject {
                         throw new RuntimeException(e);
                     }
                 });
-        consumer.flush();;
+        consumer.flush();
         _metrics.notifyDrain(count);
+        if(count==0)
+            emptyMeter.record();
         return count;
     }
 
@@ -433,21 +284,16 @@ public class JCQueue implements IStatefulObject {
         return Thread.currentThread().getId();
     }
 
-    private boolean publishDirectSingle(Object obj, boolean block) throws InterruptedException {
+    private boolean publishDirectSingle(Object obj)  {
         if( _buffer.offer(obj) ) {
             _metrics.notifyArrivals(1);
             _metrics.notifyPublish(1);
             return true;
-        } else {
-            LockSupport.parkNanos(1);;
-        }
-        if(block) {
-            Thread.sleep(_readTimeout);
         }
         return false;
     }
 
-    private int publishDirect(ArrayList<Object> objs, boolean block) {
+    private int publishDirect(ArrayList<Object> objs) {
         MessagePassingQueue.Supplier<Object> supplier =
                 new MessagePassingQueue.Supplier<Object> (){
                     int i = 0;
@@ -462,27 +308,20 @@ public class JCQueue implements IStatefulObject {
         return count;
     }
 
-
+    // TODO: Roshan: Perhaps we dont need the 'buffered' flag anymore and default it to true (original behavior) ?
     public void publish(Object obj) {
         Long id = getId();
         JCQueue.ThreadLocalInserter batcher = _batchers.get(id);
         if (batcher == null) {
-            //This thread is the only one ever creating this, so this is safe
-//            batcher = new JCQueue.ThreadLocalJustInserter();
             if (_inputBatchSize > 1) {
                 batcher = new ThreadLocalBatcher();
             } else {
                 batcher = new ThreadLocalJustInserter();
             }
-
+            //This thread is the only one ever creating a batcher for this thd id, so this is safe
             _batchers.put(id, batcher);
         }
-        try {
-            batcher.add(obj);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-//        batcher.flush(false);  << -- impt change: Avoids concurrent access of flush() method
+        batcher.add(obj);
     }
 
     @Override

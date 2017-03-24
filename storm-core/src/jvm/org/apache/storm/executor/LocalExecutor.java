@@ -33,8 +33,7 @@ public class LocalExecutor {
     public static Executor mkExecutor(WorkerState workerState, List<Long> executorId, Map<String, String> initialCredentials)
         throws Exception {
         Executor executor = Executor.mkExecutor(workerState, executorId, initialCredentials);
-        executor.setLocalExecutorTransfer(new ExecutorTransfer(workerState, executor.getTransferWorkerQueue(),
-            executor.getStormConf()) {
+        executor.setLocalExecutorTransfer(new ExecutorTransfer(workerState, executor.getStormConf()) {
             @Override
             public void transfer(int task, Tuple tuple) {
                 if (null != trackId) {
