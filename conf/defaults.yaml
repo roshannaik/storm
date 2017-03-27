@@ -257,9 +257,9 @@ topology.classpath: null
 topology.environment: null
 topology.bolts.outgoing.overflow.buffer.enable: false
 topology.disruptor.wait.timeout.millis: 1000
-topology.disruptor.batch.size: 300
+topology.disruptor.batch.size: 100
 topology.disruptor.batch.timeout.millis: 1
-topology.disable.loadaware.messaging: false
+topology.disable.loadaware.messaging: true
 topology.state.checkpoint.interval.ms: 1000
 
 # Configs for Resource Aware Scheduler

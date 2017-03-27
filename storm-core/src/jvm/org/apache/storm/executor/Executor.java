@@ -397,24 +397,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     }
 
 
-//    private DisruptorQueue mkExecutorBatchQueue(Map stormConf, List<Long> executorId) {
-//        int sendSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_EXECUTOR_SEND_BUFFER_SIZE));
-//        int waitTimeOutMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS));
-//        int batchSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
-//        int batchTimeOutMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS));
-//        return new DisruptorQueue("executor" + executorId + "-send-queue", ProducerType.SINGLE,
-//                sendSize, waitTimeOutMs, batchSize, batchTimeOutMs);
-//    }
-
-    private JCQueue mkExecutorBatchQueue(Map stormConf, List<Long> executorId) {
-        int sendSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_EXECUTOR_SEND_BUFFER_SIZE));
-        int waitTimeOutMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS));
-        int batchSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
-        int batchTimeOutMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS));
-        return new JCQueue("executor" + executorId + "-send-queue", JCQueue.ProducerKind.SINGLE,
-                sendSize, waitTimeOutMs, batchSize, batchTimeOutMs);
-    }
-
     /**
      * Returns map of stream id to component id to grouper
      */

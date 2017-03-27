@@ -233,7 +233,7 @@ public class WorkerState implements JCQueue.Consumer {
         return userTimer;
     }
 
-    final JCQueue transferQueue;
+    final JCQueue transferQueue; //TODO: Roshan: transferQueue also needs to avoid double batching
 
     // Timers
     final StormTimer heartbeatTimer = mkHaltingTimer("heartbeat-timer");
@@ -681,7 +681,7 @@ public class WorkerState implements JCQueue.Consumer {
             receiveQueueMap.put(executor, new JCQueue("receive-queue",
                 Utils.getInt(topologyConf.get(Config.TOPOLOGY_EXECUTOR_RECEIVE_BUFFER_SIZE)),
                 (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
-                Utils.getInt(topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE)),
+                1,
                 (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS)));
         }
         return receiveQueueMap;

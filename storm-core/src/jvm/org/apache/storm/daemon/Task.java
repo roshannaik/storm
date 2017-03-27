@@ -30,8 +30,10 @@ import org.apache.storm.generated.ShellComponent;
 import org.apache.storm.generated.SpoutSpec;
 import org.apache.storm.generated.StateSpoutSpec;
 import org.apache.storm.generated.StormTopology;
+import org.apache.storm.grouping.CustomStreamGrouping;
 import org.apache.storm.grouping.LoadAwareCustomStreamGrouping;
 import org.apache.storm.grouping.LoadMapping;
+import org.apache.storm.grouping.ShuffleGrouping;
 import org.apache.storm.hooks.ITaskHook;
 import org.apache.storm.hooks.info.EmitInfo;
 import org.apache.storm.spout.ShellSpout;
@@ -122,18 +124,22 @@ public class Task {
         return new ArrayList<>(0);
     }
 
+    ArrayList<Integer> outTasks = new ArrayList<>();
+
     public List<Integer> getOutgoingTasks(String stream, List<Object> values) {
         if (debug) {
             LOG.info("Emitting: {} {} {}", componentId, stream, values);
         }
 
-        List<Integer> outTasks = new ArrayList<>();
-        if (!streamComponentToGrouper.containsKey(stream)) {
-            throw new IllegalArgumentException("Unknown stream ID: " + stream);
-        }
-        if (null != streamComponentToGrouper.get(stream)) {
+        outTasks.clear();
+//
+//        if (!streamComponentToGrouper.containsKey(stream)) {
+//            throw new IllegalArgumentException("Unknown stream ID: " + stream);
+//        }
+        Map<String, LoadAwareCustomStreamGrouping> streamGroupings = streamComponentToGrouper.get(stream);
+        if (null != streamGroupings) {
             // null value for __system
-            for (LoadAwareCustomStreamGrouping grouper : streamComponentToGrouper.get(stream).values()) {
+            for (LoadAwareCustomStreamGrouping grouper : streamGroupings.values()) {
                 if (grouper == GrouperFactory.DIRECT) {
                     throw new IllegalArgumentException("Cannot do regular emit to direct stream");
                 }
@@ -141,7 +147,8 @@ public class Task {
                 outTasks.addAll(compTasks);
             }
         }
-        new EmitInfo(values, stream, taskId, outTasks).applyOn(userTopologyContext);
+        if(!userTopologyContext.getHooks().isEmpty())
+            new EmitInfo(values, stream, taskId, outTasks).applyOn(userTopologyContext);
         try {
             if (emitSampler.call()) {
                 executorStats.emittedTuple(stream);

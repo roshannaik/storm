@@ -45,7 +45,7 @@ public class JCQueue implements IStatefulObject {
     private static final Object INTERRUPT = new Object();
     private static final String PREFIX = "disruptor-";
 //    private static final JCQueue.FlusherPool FLUSHER = new JCQueue.FlusherPool();
-    private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 1_000_000);
+    private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 5_000_000);
 
     private interface ThreadLocalInserter {
         public void add(Object obj);
@@ -308,7 +308,6 @@ public class JCQueue implements IStatefulObject {
         return count;
     }
 
-    // TODO: Roshan: Perhaps we dont need the 'buffered' flag anymore and default it to true (original behavior) ?
     public void publish(Object obj) {
         Long id = getId();
         JCQueue.ThreadLocalInserter batcher = _batchers.get(id);

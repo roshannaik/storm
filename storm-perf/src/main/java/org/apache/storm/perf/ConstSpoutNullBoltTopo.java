@@ -45,7 +45,7 @@ public class ConstSpoutNullBoltTopo {
 
     public static StormTopology getTopology(Map conf, int printFreq) {
 
-        // 1 -  Setup HDFS Spout   --------
+        // 1 -  Setup Const Spout   --------
         ConstSpout spout = new ConstSpout("some data").withOutputFields("str");
 
         // 2 -  Setup DevNull Bolt   --------
@@ -62,6 +62,7 @@ public class ConstSpoutNullBoltTopo {
             bd.localOrShuffleGrouping(SPOUT_ID);
         else if(groupingType.equalsIgnoreCase("shuffle") )
             bd.shuffleGrouping(GROUPING);
+//        bd.fieldsGrouping(SPOUT_ID, new Fields("str") );
         return builder.createTopology();
     }
 
@@ -74,12 +75,12 @@ public class ConstSpoutNullBoltTopo {
             // submit topology to local cluster
             Config conf = new Config();
             conf.setNumAckers(0);
+            conf.put(Config.TOPOLOGY_DISABLE_LOADAWARE_MESSAGING, true);
             int printFreq = 20_000_000;
 //            int printFreq = 10_000_000;
 
             LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf, printFreq), conf);
-            Thread.sleep(20_000_000); // let run for a few seconds
-//            Helper.killAndExit(cluster, TOPOLOGY_NAME);
+            addShutdownHook(cluster);
         } else {
             Integer duration = Integer.parseInt(args[0]);  // in seconds
             Integer pollInterval = 60; // in seconds
@@ -91,5 +92,15 @@ public class ConstSpoutNullBoltTopo {
         }
     }
 
+    public static void addShutdownHook(LocalCluster cluster) {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                Helper.killAndExit(cluster, TOPOLOGY_NAME);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        ));
+    }
 }
 
