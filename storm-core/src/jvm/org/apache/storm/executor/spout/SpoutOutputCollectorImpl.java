@@ -94,7 +94,7 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
 
         List<Long> ackSeq = needAck ? new ArrayList<>() : null;
 
-        long rootId = MessageId.generateId(random);
+        long rootId = needAck ? MessageId.generateId(random) : 0 ;
         for (Integer t : outTasks) {
             MessageId msgId;
             if (needAck) {
@@ -102,11 +102,11 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
                 msgId = MessageId.makeRootId(rootId, as);
                 ackSeq.add(as);
             } else {
-                msgId = MessageId.makeUnanchored();
+                msgId = MessageId.makeUnanchored(); // TODO: Roshan: make this return a singleton map instance
             }
 
-            TupleImpl tuple = new TupleImpl(executor.getWorkerTopologyContext(), values, this.taskId, stream, msgId);
-            executor.getExecutorTransfer().transfer(t, tuple);
+            TupleImpl tuple = new TupleImpl(executor.getWorkerTopologyContext(), values, this.taskId, stream, msgId); //TODO: Roshan: This is expensive. Limits emit() rate to 7.5 mill/sec (15 mill/sec without it)
+            executor.getExecutorTransfer().transfer(t, tuple); // TODO: Roshan: This is also limiting emit() rate to 7.5mill/sec
         }
         if (isEventLoggers) {
             executor.sendToEventLogger(executor, taskData, values, executor.getComponentId(), messageId, random);

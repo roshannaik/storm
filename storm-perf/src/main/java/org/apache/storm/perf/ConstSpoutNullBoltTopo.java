@@ -84,7 +84,6 @@ public class ConstSpoutNullBoltTopo {
             // For IDE based profiling ... submit topology to local cluster
             Config conf = new Config();
             conf.setNumAckers(0);
-
             LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf, printFreq), conf);
 
             Helper.setupShutdownHook(cluster, TOPOLOGY_NAME);

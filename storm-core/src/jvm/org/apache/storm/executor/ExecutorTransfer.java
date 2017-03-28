@@ -17,7 +17,6 @@
  */
 package org.apache.storm.executor;
 
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.storm.Config;
 import org.apache.storm.daemon.worker.WorkerState;
 import org.apache.storm.messaging.TaskMessage;
@@ -25,39 +24,31 @@ import org.apache.storm.serialization.KryoTupleSerializer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.utils.JCQueue;
-import org.apache.storm.utils.MutableObject;
 import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 
-public class ExecutorTransfer implements JCQueue.Consumer, Callable {
+public class ExecutorTransfer implements JCQueue.Consumer {
     private static final Logger LOG = LoggerFactory.getLogger(ExecutorTransfer.class);
 
     private final WorkerState workerData;
-//    private final JCQueue batchTransferQueue;
     private final Map stormConf;
     private final KryoTupleSerializer serializer;
-//    private final ArrayList cachedEvents; // TODO : change to ArrayList<AddressedTuple>
     private final boolean isDebug;
     private final int producerBatchSz;
     private int currBatchSz = 0;
 
-//    ArrayList<AddressedTuple> localTuples = new ArrayList<>();
     HashMap<Integer, List<AddressedTuple>> localMap = new HashMap<>();
     HashMap<Integer, List<TaskMessage>> remoteMap  = new HashMap<>();
 
     public ExecutorTransfer(WorkerState workerData, Map stormConf) {
         this.workerData = workerData;
-//        this.batchTransferQueue = batchTransferQueue;
         this.stormConf = stormConf;
         this.serializer = new KryoTupleSerializer(stormConf, workerData.getWorkerTopologyContext());
-//        this.cachedEvents = new ArrayList<>();
         this.isDebug = Utils.getBoolean(stormConf.get(Config.TOPOLOGY_DEBUG), false);
         this.producerBatchSz = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
     }
@@ -73,19 +64,6 @@ public class ExecutorTransfer implements JCQueue.Consumer, Callable {
             flush(); // TODO: Roshan: flush needs to be called on timeout also
             currBatchSz=0;
         }
-//        batchTransferQueue.publish(val);
-    }
-
-//    @VisibleForTesting
-//    public JCQueue getBatchTransferQueue() {
-//        return this.batchTransferQueue;
-//    }
-
-    @Override
-    public Object call() throws Exception {
-//        batchTransferQueue.consumeBatchWhenAvailable(this);
-        Thread.sleep(1000);
-        return 0L; // should not get called
     }
 
     public String getName() {

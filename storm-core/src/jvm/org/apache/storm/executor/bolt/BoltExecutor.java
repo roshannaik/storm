@@ -93,7 +93,7 @@ public class BoltExecutor extends Executor {
 
         return new Callable<Object>() {
 //            RunningStat latency = new RunningStat("ACK Bolt full latency");
-            RunningStat avgConsumeCount = new RunningStat("BOLT Avg consume count", 500_000);
+            RunningStat avgConsumeCount = new RunningStat("BOLT Avg consume count", 2_000_000);
             @Override
             public Object call() throws Exception {
                 long start = System.currentTimeMillis();

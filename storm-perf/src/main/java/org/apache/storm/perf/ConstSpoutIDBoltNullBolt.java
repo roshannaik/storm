@@ -92,7 +92,7 @@ public class ConstSpoutIDBoltNullBolt {
             // submit to real cluster
             Map stormConf = Utils.readStormConfig();
             StormSubmitter.submitTopologyWithProgressBar(TOPOLOGY_NAME, stormConf, getTopology(stormConf,printFreq) );
-            Helper.collectMetricsAndKill(TOPOLOGY_NAME, pollInterval, duration, stormConf);
+            Helper.collectMetricsAndKill(TOPOLOGY_NAME, pollInterval, duration);
         }
     }
 }
