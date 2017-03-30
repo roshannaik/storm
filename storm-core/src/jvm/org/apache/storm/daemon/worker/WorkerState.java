@@ -200,14 +200,6 @@ public class WorkerState implements JCQueue.Consumer {
     final Map<String, Object> userSharedResources;
     final LoadMapping loadMapping;
     final AtomicReference<Map<String, VersionedData<Assignment>>> assignmentVersions;
-    // Whether this worker is going slow
-    final AtomicBoolean backpressure = new AtomicBoolean(false);
-    // If the transfer queue is backed-up
-    final AtomicBoolean transferBackpressure = new AtomicBoolean(false);
-    // a trigger for synchronization with executors
-    final AtomicBoolean backpressureTrigger = new AtomicBoolean(false);
-    // whether the throttle is activated for spouts
-    final AtomicBoolean throttleOn = new AtomicBoolean(false);
 
     public LoadMapping getLoadMapping() {
         return loadMapping;
@@ -215,14 +207,6 @@ public class WorkerState implements JCQueue.Consumer {
 
     public AtomicReference<Map<String, VersionedData<Assignment>>> getAssignmentVersions() {
         return assignmentVersions;
-    }
-
-    public AtomicBoolean getBackpressureTrigger() {
-        return backpressureTrigger;
-    }
-
-    public AtomicBoolean getThrottleOn() {
-        return throttleOn;
     }
 
     public JCQueue getTransferQueue() {
@@ -243,7 +227,6 @@ public class WorkerState implements JCQueue.Consumer {
     final StormTimer resetLogLevelsTimer = mkHaltingTimer("reset-log-levels-timer");
     final StormTimer refreshActiveTimer = mkHaltingTimer("refresh-active-timer");
     final StormTimer executorHeartbeatTimer = mkHaltingTimer("executor-heartbeat-timer");
-    final StormTimer refreshBackpressureTimer = mkHaltingTimer("refresh-backpressure-timer");
     final StormTimer userTimer = mkHaltingTimer("user-timer");
 
     // global variables only used internally in class
@@ -266,7 +249,7 @@ public class WorkerState implements JCQueue.Consumer {
         this.transferQueue = new JCQueue("worker-transfer-queue",
             Utils.getInt(topologyConf.get(Config.TOPOLOGY_TRANSFER_BUFFER_SIZE)),
             (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
-            Utils.getInt(topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE)),
+            1,
             (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS));
 
         this.conf = conf;
@@ -432,11 +415,6 @@ public class WorkerState implements JCQueue.Consumer {
         }
     }
 
-    public void refreshThrottle() {
-        boolean backpressure = stormClusterState.topologyBackpressure(topologyId, this::refreshThrottle);
-        this.throttleOn.set(backpressure);
-    }
-
     public void refreshLoad() {
         Set<Integer> remoteTasks = Sets.difference(new HashSet<Integer>(outboundTasks), new HashSet<>(taskIds));
         Long now = System.currentTimeMillis();
@@ -523,38 +501,9 @@ public class WorkerState implements JCQueue.Consumer {
         }
     }
 
-    //TODO: Roshan : should this publish be buffered or not ?
     public void transferRemote(Map<Integer, List<TaskMessage>> remoteMap) {
         transferQueue.publish(remoteMap);
     }
-
-//    public void transfer(KryoTupleSerializer serializer, List<AddressedTuple> tupleBatch) {
-//        if (trySerializeLocal) {
-//            assertCanSerialize(serializer, tupleBatch);
-//        }
-//        List<AddressedTuple> local = new ArrayList<>();
-//        Map<Integer, List<TaskMessage>> remoteMap = new HashMap<>();
-//        for (AddressedTuple addressedTuple : tupleBatch) {
-//            int destTask = addressedTuple.getDest();
-//            if (taskIds.contains(destTask)) {
-//                // Local task
-//                local.add(addressedTuple);
-//            } else {
-//                // Using java objects directly to avoid performance issues in java code
-//                if (! remoteMap.containsKey(destTask)) {
-//                    remoteMap.put(destTask, new ArrayList<>());
-//                }
-//                remoteMap.get(destTask).add(new TaskMessage(destTask, serializer.serialize(addressedTuple.getTuple())));
-//            }
-//        }
-//
-//        if (!local.isEmpty()) {
-//            transferLocal(local);
-//        }
-//        if (!remoteMap.isEmpty()) {
-//            transferQueue.publish(remoteMap);
-//        }
-//    }
 
     public void classifyLocalOrRemote(KryoTupleSerializer serializer, AddressedTuple addressedTuple,
                                       Map<Integer, List<AddressedTuple>> localMap, Map<Integer, List<TaskMessage>> remoteMap) {
@@ -681,7 +630,7 @@ public class WorkerState implements JCQueue.Consumer {
             receiveQueueMap.put(executor, new JCQueue("receive-queue",
                 Utils.getInt(topologyConf.get(Config.TOPOLOGY_EXECUTOR_RECEIVE_BUFFER_SIZE)),
                 (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
-                1,
+                1,  // it receives arrays of tuples so we disable batching (to avoid double batching)
                 (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS)));
         }
         return receiveQueueMap;

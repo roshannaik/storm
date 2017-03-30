@@ -1513,36 +1513,6 @@ public class Config extends HashMap<String, Object> {
     public static final String TASK_CREDENTIALS_POLL_SECS = "task.credentials.poll.secs";
 
     /**
-     * How often to poll for changed topology backpressure flag from ZK
-     */
-    @isInteger
-    @isPositiveNumber
-    public static final String TASK_BACKPRESSURE_POLL_SECS = "task.backpressure.poll.secs";
-
-    /**
-     * Whether to enable backpressure in for a certain topology
-     */
-    @isBoolean
-    public static final String TOPOLOGY_BACKPRESSURE_ENABLE = "topology.backpressure.enable";
-
-    /**
-     * This signifies the tuple congestion in a disruptor queue.
-     * When the used ratio of a disruptor queue is higher than the high watermark,
-     * the backpressure scheme, if enabled, should slow down the tuple sending speed of
-     * the spouts until reaching the low watermark.
-     */
-    @isPositiveNumber
-    public static final String BACKPRESSURE_DISRUPTOR_HIGH_WATERMARK="backpressure.disruptor.high.watermark";
-
-    /**
-     * This signifies a state that a disruptor queue has left the congestion.
-     * If the used ratio of a disruptor queue is lower than the low watermark,
-     * it will unset the backpressure flag.
-     */
-    @isPositiveNumber
-    public static final String BACKPRESSURE_DISRUPTOR_LOW_WATERMARK="backpressure.disruptor.low.watermark";
-
-    /**
      * A list of classes implementing IClusterMetricsConsumer (See storm.yaml.example for exact config format).
      * Each listed class will be routed cluster related metrics data.
      * Each listed class maps 1:1 to a ClusterMetricsConsumerExecutor and they're executed in Nimbus.

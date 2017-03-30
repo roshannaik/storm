@@ -69,11 +69,6 @@ public class ExecutorShutdown implements Shutdownable, IRunningExecutor {
     }
 
     @Override
-    public boolean getBackPressureFlag() {
-        return executor.getBackpressure();
-    }
-
-    @Override
     public void shutdown() {
         try {
             LOG.info("Shutting down executor " + executor.getComponentId() + ":" + executor.getExecutorId());

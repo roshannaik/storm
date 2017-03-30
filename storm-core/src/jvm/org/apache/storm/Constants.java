@@ -51,7 +51,6 @@ public class Constants {
     public static final String USER_TIMER = "user-timer";
     public static final String TRANSFER_FN = "transfer-fn";
     public static final String SUICIDE_FN = "suicide-fn";
-    public static final String THROTTLE_ON = "throttle-on";
     public static final String EXECUTOR_RECEIVE_QUEUE_MAP = "executor-receive-queue-map";
     public static final String STORM_ACTIVE_ATOM = "storm-active-atom";
     public static final String COMPONENT_TO_DEBUG_ATOM = "storm-component->debug-atom";

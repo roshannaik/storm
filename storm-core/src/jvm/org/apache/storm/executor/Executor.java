@@ -97,7 +97,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     protected final Callable<Boolean> sampler;
     protected ExecutorTransfer executorTransfer;
     protected final String type;
-    protected final AtomicBoolean throttleOn;
 
     protected final IReportError reportError;
     protected final Random rand;
@@ -157,7 +156,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         this.reportError = new ReportError(stormConf, stormClusterState, stormId, componentId, workerTopologyContext);
         this.reportErrorDie = new ReportErrorAndDie(reportError, suicideFn);
         this.sampler = ConfigUtils.mkStatsSampler(stormConf);
-        this.throttleOn = workerData.getThrottleOn();
         this.isDebug = Utils.getBoolean(stormConf.get(Config.TOPOLOGY_DEBUG), false);
         this.rand = new Random(Utils.secureRandomLong());
         this.credentials = credentials;
@@ -221,17 +219,12 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     public ExecutorShutdown execute() throws Exception {
         LOG.info("Loading executor tasks " + componentId + ":" + executorId);
 
-//        registerBackpressure();
-//        Utils.SmartThread systemThreads =
-//                Utils.asyncLoop(executorTransfer, executorTransfer.getName(), reportErrorDie);
-
         String handlerName = componentId + "-executor" + executorId;
         Utils.SmartThread handlers =
                 Utils.asyncLoop(this, false, reportErrorDie, Thread.NORM_PRIORITY, true, true, handlerName);
         setupTicks(StatsUtil.SPOUT.equals(type));
 
         LOG.info("Finished loading executor " + componentId + ":" + executorId);
-//        return new ExecutorShutdown(this, Lists.newArrayList(systemThreads, handlers), idToTask);
         return new ExecutorShutdown(this, Lists.newArrayList(handlers), idToTask);
     }
 
@@ -355,24 +348,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         }
     }
 
-    private void registerBackpressure() {
-        receiveQueue.registerBackpressureCallback(new DisruptorBackpressureCallback() {
-            @Override
-            public void highWaterMark() throws Exception {
-                LOG.debug("executor " + executorId + " is congested, set backpressure flag true");
-                WorkerBackpressureThread.notifyBackpressureChecker(workerData.getBackpressureTrigger());
-            }
-
-            @Override
-            public void lowWaterMark() throws Exception {
-                LOG.debug("executor " + executorId + " is not-congested, set backpressure flag false");
-                WorkerBackpressureThread.notifyBackpressureChecker(workerData.getBackpressureTrigger());
-            }
-        });
-        receiveQueue.setHighWaterMark(Utils.getDouble(stormConf.get(Config.BACKPRESSURE_DISRUPTOR_HIGH_WATERMARK)));
-        receiveQueue.setLowWaterMark(Utils.getDouble(stormConf.get(Config.BACKPRESSURE_DISRUPTOR_LOW_WATERMARK)));
-        receiveQueue.setEnableBackpressure(Utils.getBoolean(stormConf.get(Config.TOPOLOGY_BACKPRESSURE_ENABLE), false));
-    }
 
     protected void setupTicks(boolean isSpout) {
         final Integer tickTimeSecs = Utils.getInt(stormConf.get(Config.TOPOLOGY_TICK_TUPLE_FREQ_SECS), null);
@@ -505,10 +480,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         return stats;
     }
 
-    public AtomicBoolean getThrottleOn() {
-        return throttleOn;
-    }
-
     public String getType() {
         return type;
     }
@@ -541,9 +512,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         return receiveQueue;
     }
 
-    public boolean getBackpressure() {
-        return receiveQueue.getThrottleOn();
-    }
 
 //    public JCQueue getTransferWorkerQueue() {
 //        return transferQueue;

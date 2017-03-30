@@ -59,12 +59,9 @@ import org.apache.storm.security.auth.AuthUtils;
 import org.apache.storm.security.auth.IAutoCredentials;
 import org.apache.storm.stats.StatsUtil;
 import org.apache.storm.utils.ConfigUtils;
-import org.apache.storm.utils.DisruptorBackpressureCallback;
 import org.apache.storm.utils.LocalState;
 import org.apache.storm.utils.Time;
 import org.apache.storm.utils.Utils;
-import org.apache.storm.utils.WorkerBackpressureCallback;
-import org.apache.storm.utils.WorkerBackpressureThread;
 import org.apache.storm.utils.JCQueue;
 import org.apache.zookeeper.data.ACL;
 import org.slf4j.Logger;
@@ -89,7 +86,6 @@ public class Worker implements Shutdownable, DaemonCommon {
     private WorkerState workerState;
     private AtomicReference<List<IRunningExecutor>> executorsAtom;
     private Thread transferThread;
-    private WorkerBackpressureThread backpressureThread;
 
     private AtomicReference<Credentials> credentialsAtom;
     private Subject subject;
@@ -210,26 +206,6 @@ public class Worker implements Shutdownable, DaemonCommon {
                     return 0L;
                 });
 
-                DisruptorBackpressureCallback disruptorBackpressureHandler =
-                    mkDisruptorBackpressureHandler(workerState);
-                workerState.transferQueue.registerBackpressureCallback(disruptorBackpressureHandler);
-                workerState.transferQueue
-                    .setEnableBackpressure((Boolean) topologyConf.get(Config.TOPOLOGY_BACKPRESSURE_ENABLE));
-                workerState.transferQueue
-                    .setHighWaterMark(Utils.getDouble(topologyConf.get(Config.BACKPRESSURE_DISRUPTOR_HIGH_WATERMARK)));
-                workerState.transferQueue
-                    .setLowWaterMark(Utils.getDouble(topologyConf.get(Config.BACKPRESSURE_DISRUPTOR_LOW_WATERMARK)));
-
-                WorkerBackpressureCallback backpressureCallback = mkBackpressureHandler();
-                backpressureThread = new WorkerBackpressureThread(workerState.backpressureTrigger, workerState, backpressureCallback);
-                if ((Boolean) topologyConf.get(Config.TOPOLOGY_BACKPRESSURE_ENABLE)) {
-                    backpressureThread.start();
-                    stormClusterState.topologyBackpressure(topologyId, workerState::refreshThrottle);
-
-                    int pollingSecs = Utils.getInt(topologyConf.get(Config.TASK_BACKPRESSURE_POLL_SECS));
-                    workerState.refreshBackpressureTimer.scheduleRecurring(0, pollingSecs, workerState::refreshThrottle);
-                }
-
                 credentialsAtom = new AtomicReference<Credentials>(initialCredentials);
 
                 establishLogSettingCallback();
@@ -240,9 +216,6 @@ public class Worker implements Shutdownable, DaemonCommon {
                     (Integer) conf.get(Config.TASK_CREDENTIALS_POLL_SECS), new Runnable() {
                         @Override public void run() {
                             checkCredentialsChanged();
-                            if ((Boolean) topologyConf.get(Config.TOPOLOGY_BACKPRESSURE_ENABLE)) {
-                               checkThrottleChanged();
-                            }
                         }
                     });
 
@@ -310,11 +283,6 @@ public class Worker implements Shutdownable, DaemonCommon {
         }
     }
 
-    public void checkThrottleChanged() {
-        boolean throttleOn = workerState.stormClusterState.topologyBackpressure(topologyId, this::checkThrottleChanged);
-        workerState.throttleOn.set(throttleOn);
-    }
-
     public void checkLogConfigChanged() {
         LogConfig logConfig = workerState.stormClusterState.topologyLogConfig(topologyId, null);
         logConfigManager.processLogConfigChange(logConfig);
@@ -323,57 +291,6 @@ public class Worker implements Shutdownable, DaemonCommon {
 
     public void establishLogSettingCallback() {
         workerState.stormClusterState.topologyLogConfig(topologyId, this::checkLogConfigChanged);
-    }
-
-
-    /**
-     * make a handler for the worker's send disruptor queue to
-     * check highWaterMark and lowWaterMark for backpressure
-     */
-    private DisruptorBackpressureCallback mkDisruptorBackpressureHandler(WorkerState workerState) {
-        return new DisruptorBackpressureCallback() {
-            @Override public void highWaterMark() throws Exception {
-                LOG.debug("worker {} transfer-queue is congested, checking backpressure state", workerState.workerId);
-                WorkerBackpressureThread.notifyBackpressureChecker(workerState.backpressureTrigger);
-            }
-
-            @Override public void lowWaterMark() throws Exception {
-                LOG.debug("worker {} transfer-queue is not congested, checking backpressure state", workerState.workerId);
-                WorkerBackpressureThread.notifyBackpressureChecker(workerState.backpressureTrigger);
-            }
-        };
-    }
-
-    /**
-     * make a handler that checks and updates worker's backpressure flag
-     */
-    private WorkerBackpressureCallback mkBackpressureHandler() {
-        final List<IRunningExecutor> executors = executorsAtom.get();
-        return new WorkerBackpressureCallback() {
-            @Override public void onEvent(Object obj) {
-                String topologyId = workerState.topologyId;
-                String assignmentId = workerState.assignmentId;
-                int port = workerState.port;
-                IStormClusterState stormClusterState = workerState.stormClusterState;
-                boolean prevBackpressureFlag = workerState.backpressure.get();
-                boolean currBackpressureFlag = prevBackpressureFlag;
-                if (null != executors) {
-                    currBackpressureFlag = workerState.transferQueue.getThrottleOn() || (executors.stream()
-                        .map(IRunningExecutor::getBackPressureFlag).reduce((op1, op2) -> (op1 || op2)).get());
-                }
-
-                if (currBackpressureFlag != prevBackpressureFlag) {
-                    try {
-                        LOG.debug("worker backpressure flag changing from {} to {}", prevBackpressureFlag, currBackpressureFlag);
-                        stormClusterState.workerBackpressure(topologyId, assignmentId, (long) port, currBackpressureFlag);
-                        // doing the local reset after the zk update succeeds is very important to avoid a bad state upon zk exception
-                        workerState.backpressure.set(currBackpressureFlag);
-                    } catch (Exception ex) {
-                        LOG.error("workerBackpressure update failed when connecting to ZK ... will retry", ex);
-                    }
-                }
-            }
-        };
     }
 
     @Override public void shutdown() {
@@ -402,13 +319,9 @@ public class Worker implements Shutdownable, DaemonCommon {
             transferThread.join();
             LOG.info("Shut down transfer thread");
 
-            backpressureThread.terminate();
-            LOG.info("Shut down backpressure thread");
-
             workerState.heartbeatTimer.close();
             workerState.refreshConnectionsTimer.close();
             workerState.refreshCredentialsTimer.close();
-            workerState.refreshBackpressureTimer.close();
             workerState.refreshActiveTimer.close();
             workerState.executorHeartbeatTimer.close();
             workerState.userTimer.close();
@@ -420,7 +333,6 @@ public class Worker implements Shutdownable, DaemonCommon {
             workerState.runWorkerShutdownHooks();
 
             workerState.stormClusterState.removeWorkerHeartbeat(topologyId, assignmentId, (long) port);
-            workerState.stormClusterState.removeWorkerBackpressure(topologyId, assignmentId, (long) port);
             LOG.info("Disconnecting from storm cluster state context");
             workerState.stormClusterState.disconnect();
             workerState.stateStorage.close();
@@ -436,7 +348,6 @@ public class Worker implements Shutdownable, DaemonCommon {
             && workerState.refreshConnectionsTimer.isTimerWaiting()
             && workerState.refreshLoadTimer.isTimerWaiting()
             && workerState.refreshCredentialsTimer.isTimerWaiting()
-            && workerState.refreshBackpressureTimer.isTimerWaiting()
             && workerState.refreshActiveTimer.isTimerWaiting()
             && workerState.executorHeartbeatTimer.isTimerWaiting()
             && workerState.userTimer.isTimerWaiting();

@@ -44,7 +44,6 @@ public class JCQueue implements IStatefulObject {
     private static final Logger LOG = LoggerFactory.getLogger(JCQueue.class);
     private static final Object INTERRUPT = new Object();
     private static final String PREFIX = "disruptor-";
-//    private static final JCQueue.FlusherPool FLUSHER = new JCQueue.FlusherPool();
     private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 5_000_000);
 
     private interface ThreadLocalInserter {
@@ -52,7 +51,6 @@ public class JCQueue implements IStatefulObject {
     }
 
     private class ThreadLocalJustInserter implements JCQueue.ThreadLocalInserter {
-//        private final ConcurrentLinkedQueue<Object> _overflow = new ConcurrentLinkedQueue<>();;
 
         public ThreadLocalJustInserter() {
         }
@@ -71,12 +69,10 @@ public class JCQueue implements IStatefulObject {
     }
 
     private class ThreadLocalBatcher implements ThreadLocalInserter {
-//        private final ConcurrentLinkedQueue<ArrayList<Object>> _overflow;
         private ArrayList<Object> _currentBatch;
         private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 10_000_000);
 
         public ThreadLocalBatcher() {
-//            _overflow = new ConcurrentLinkedQueue<ArrayList<Object>>();
             _currentBatch = new ArrayList<>(_inputBatchSize);
         }
 
@@ -113,7 +109,6 @@ public class JCQueue implements IStatefulObject {
         private final RateTracker _rateTracker = new RateTracker(10000, 10);
 
         private final RunningStat drainCount =  new RunningStat("drainCount", 10_000_000, true);
-        private final RunningStat publishCount =  new RunningStat("publishCount", 10_000_000, true);
 
         public long writePos() {
             return _buffer.size();
@@ -161,7 +156,6 @@ public class JCQueue implements IStatefulObject {
             state.put("sojourn_time_ms", sojournTime); //element sojourn time in milliseconds
             state.put("overflow", 0);
             state.put("drainCountAvg", drainCount.mean());
-            state.put("publishCountAvg", publishCount.mean());
             return state;
         }
 
@@ -171,10 +165,6 @@ public class JCQueue implements IStatefulObject {
 
         public void notifyDrain(int count) {
             drainCount.push(count);
-        }
-
-        public void notifyPublish(int count) {
-            publishCount.push(count);
         }
 
         public void close() {
@@ -187,7 +177,6 @@ public class JCQueue implements IStatefulObject {
 
     private final int _inputBatchSize;
     private final ConcurrentHashMap<Long, JCQueue.ThreadLocalInserter> _batchers = new ConcurrentHashMap<>();
-//    private final JCQueue.Flusher _flusher;
     private final JCQueue.QueueMetrics _metrics;
 
     private String _queueName = "";
@@ -218,9 +207,6 @@ public class JCQueue implements IStatefulObject {
         //The batch size can be no larger than half the full queue size.
         //This is mostly to avoid contention issues.
         _inputBatchSize = Math.max(1, Math.min(inputBatchSize, size/2));
-
-//        _flusher = new JCQueue.Flusher(Math.max(flushInterval, 5), _queueName);
-//        _flusher.start();
     }
 
     public String getName() {
@@ -233,7 +219,6 @@ public class JCQueue implements IStatefulObject {
 
     public void haltWithInterrupt() {
         if( publishDirectSingle(INTERRUPT) ){
-//                _flusher.close();
             _metrics.close();
         } else {
             throw new RuntimeException(new QueueFullException());
@@ -241,10 +226,7 @@ public class JCQueue implements IStatefulObject {
     }
 
     public int consumeBatch(JCQueue.Consumer handler) {
-//        if (_metrics.population() > 0) {
             return consumeBatchWhenAvailable(handler);
-//        }
-//        return 0;
     }
 
     public int consumeBatchWhenAvailable(Consumer handler) {
@@ -276,10 +258,6 @@ public class JCQueue implements IStatefulObject {
     }
 
 
-    public void registerBackpressureCallback(DisruptorBackpressureCallback cb) {
-        // NO-OP
-    }
-
     private static Long getId() {
         return Thread.currentThread().getId();
     }
@@ -287,7 +265,6 @@ public class JCQueue implements IStatefulObject {
     private boolean publishDirectSingle(Object obj)  {
         if( _buffer.offer(obj) ) {
             _metrics.notifyArrivals(1);
-            _metrics.notifyPublish(1);
             return true;
         }
         return false;
@@ -304,7 +281,6 @@ public class JCQueue implements IStatefulObject {
                 };
         int count = _buffer.fill(supplier, objs.size());
         _metrics.notifyArrivals(count);
-        _metrics.notifyPublish(count);
         return count;
     }
 
@@ -317,7 +293,7 @@ public class JCQueue implements IStatefulObject {
             } else {
                 batcher = new ThreadLocalJustInserter();
             }
-            //This thread is the only one ever creating a batcher for this thd id, so this is safe
+            //This publisher thread is the only one ever creating a batcher for this thd id, so this is safe
             _batchers.put(id, batcher);
         }
         batcher.add(obj);
@@ -328,36 +304,10 @@ public class JCQueue implements IStatefulObject {
         return _metrics.getState();
     }
 
-    public JCQueue setHighWaterMark(double highWaterMark) {
-        this._highWaterMark = (int)(_metrics.capacity() * highWaterMark);
-        return this;
-    }
-
-    public JCQueue setLowWaterMark(double lowWaterMark) {
-        this._lowWaterMark = (int)(_metrics.capacity() * lowWaterMark);
-        return this;
-    }
-
-    public int getHighWaterMark() {
-        return this._highWaterMark;
-    }
-
-    public int getLowWaterMark() {
-        return this._lowWaterMark;
-    }
-
-    public JCQueue setEnableBackpressure(boolean enableBackpressure) {
-        // NOOP
-        return this;
-    }
 
     //This method enables the metrics to be accessed from outside of the JCQueue class
     public JCQueue.QueueMetrics getMetrics() {
         return _metrics;
-    }
-
-    public boolean getThrottleOn() {
-        return false;
     }
 
     private class QueueFullException extends Exception {

@@ -60,14 +60,11 @@ public class SpoutExecutor extends Executor {
     private final SpoutThrottlingMetrics spoutThrottlingMetrics;
     private final boolean hasAckers;
     private RotatingMap<Long, TupleInfo> pending;
-    private final boolean backPressureEnabled;
 
     public SpoutExecutor(final WorkerState workerData, final List<Long> executorId, Map<String, String> credentials) {
         super(workerData, executorId, credentials);
         this.spoutWaitStrategy = Utils.newInstance((String) stormConf.get(Config.TOPOLOGY_SPOUT_WAIT_STRATEGY));
         this.spoutWaitStrategy.prepare(stormConf);
-
-        this.backPressureEnabled = Utils.getBoolean(stormConf.get(Config.TOPOLOGY_BACKPRESSURE_ENABLE), false);
 
         this.lastActive = new AtomicBoolean(false);
         this.hasAckers = StormCommon.hasAckers(stormConf);
@@ -112,7 +109,6 @@ public class SpoutExecutor extends Executor {
             this.outputCollectors.add(outputCollector);
 
             taskData.getBuiltInMetrics().registerAll(stormConf, taskData.getUserContext());
-//            Map<String, JCQueue> map = ImmutableMap.of("sendqueue", transferQueue, "receive", receiveQueue);
             Map<String, JCQueue> map = ImmutableMap.of("receive", receiveQueue);
             BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, taskData.getUserContext());
 
@@ -142,7 +138,6 @@ public class SpoutExecutor extends Executor {
                 if(++i==8) i=0;
 
                 long currCount = emittedCount.get();
-//                boolean throttleOn = false; //backPressureEnabled && SpoutExecutor.this.throttleOn.get();
                 boolean reachedMaxSpoutPending = (maxSpoutPending != 0) && (pending.size() >= maxSpoutPending);
                 boolean isActive = stormActive.get();
                 if (isActive) {
@@ -153,7 +148,7 @@ public class SpoutExecutor extends Executor {
                             spout.activate();
                         }
                     }
-                    if (/*!transferQueue.isFull() && !throttleOn && */ !reachedMaxSpoutPending) {
+                    if ( !reachedMaxSpoutPending ) {
                         for (ISpout spout : spouts) {
                             spout.nextTuple();
                         }
@@ -167,20 +162,15 @@ public class SpoutExecutor extends Executor {
                         }
                     }
                     Time.sleep(100);
-//                    spoutThrottlingMetrics.skippedInactive(stats);
+                    spoutThrottlingMetrics.skippedInactive(stats);
                 }
                 if (currCount == emittedCount.get() && isActive) {
                     emptyEmitStreak.increment();
                     spoutWaitStrategy.emptyEmit(emptyEmitStreak.get());
-//                    if (throttleOn) {
-//                        spoutThrottlingMetrics.skippedThrottle(stats);
-//                    } else if (reachedMaxSpoutPending) {
-//                        spoutThrottlingMetrics.skippedMaxSpout(stats);
-//                    }
+                    spoutThrottlingMetrics.skippedMaxSpout(stats);
                 } else {
                     emptyEmitStreak.set(0);
                 }
-                long end = System.currentTimeMillis();
                 return 0L;
             }
         };
