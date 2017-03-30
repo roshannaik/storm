@@ -144,13 +144,15 @@ public class MetricsSample {
 
                 Double total = 0d;
                 Map<String, Double> vals = spoutStats.get_complete_ms_avg().get(":all-time");
-                for(String key : vals.keySet()){
-                    total += vals.get(key);
-                }
-                Double latency = total / vals.size();
+                if(vals!=null) {
+                    for (String key : vals.keySet()) {
+                        total += vals.get(key);
+                    }
+                    Double latency = total / vals.size();
 
-                spoutExecCount++;
-                spoutLatencySum += latency;
+                    spoutExecCount++;
+                    spoutLatencySum += latency;
+                }
             }
 
 
