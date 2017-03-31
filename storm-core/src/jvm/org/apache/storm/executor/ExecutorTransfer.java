@@ -32,7 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class ExecutorTransfer implements JCQueue.Consumer {
+public class ExecutorTransfer  {
     private static final Logger LOG = LoggerFactory.getLogger(ExecutorTransfer.class);
 
     private final WorkerState workerData;
@@ -58,7 +58,7 @@ public class ExecutorTransfer implements JCQueue.Consumer {
         if (isDebug) {
             LOG.info("TRANSFERRING tuple {}", addressedTuple);
         }
-        accept(addressedTuple);
+        classifyAsLocalOrRemote(addressedTuple);
         ++currBatchSz;
         if(currBatchSz>=producerBatchSz) {
             flush(); // TODO: Roshan: flush needs to be called on timeout also
@@ -70,12 +70,12 @@ public class ExecutorTransfer implements JCQueue.Consumer {
         return "No Queue here";
     }
 
-    @Override
-    public void accept(Object event)  { //TODO: change param type to AddresedTuple ?
-        workerData.classifyLocalOrRemote(serializer, (AddressedTuple) event, localMap, remoteMap);
+    // buffers the tuple into local or remote maps
+    public void classifyAsLocalOrRemote(AddressedTuple tuple)  {
+        workerData.classifyLocalOrRemote(serializer, tuple, localMap, remoteMap);
     }
 
-    @Override
+    // flushes local and remote maps
     public void flush() {
         if (!localMap.isEmpty()) {
             workerData.transferLocal(localMap);

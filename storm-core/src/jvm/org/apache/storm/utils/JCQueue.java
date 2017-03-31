@@ -18,8 +18,9 @@
 
 package org.apache.storm.utils;
 
-// TODO : Support wait/sleep strategy for both drain and fill side
+// TODO : publish is blocking(), either we need a timeout on it. or need to figure out if timeouts are needed for stopping.
 // TODO: Remove return 1L in Worker.java
+// TODO: Add metric to count how often consumeBatch consume nothing
 
 import com.lmax.disruptor.dsl.ProducerType;
 import org.apache.storm.metric.api.IStatefulObject;
@@ -34,8 +35,6 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.*;
 
-import java.util.concurrent.locks.LockSupport;
-
 
 public class JCQueue implements IStatefulObject {
 
@@ -47,7 +46,8 @@ public class JCQueue implements IStatefulObject {
     private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 5_000_000);
 
     private interface ThreadLocalInserter {
-        public void add(Object obj);
+        // blocking call that can be interrupted with Thread.interrupt()
+        void add(Object obj) throws InterruptedException ;
     }
 
     private class ThreadLocalJustInserter implements JCQueue.ThreadLocalInserter {
@@ -55,28 +55,31 @@ public class JCQueue implements IStatefulObject {
         public ThreadLocalJustInserter() {
         }
 
-        //called by the main thread and should not block for an undefined period of time
-        public void add(Object obj) {
+        /** Blocking call, that can be interrupted via Thread.interrupt */
+        @Override
+        public void add(Object obj) throws InterruptedException {
             boolean inserted = publishDirectSingle(obj);
             while(!inserted) {
-                LockSupport.parkNanos(1);
-                if(Thread.interrupted())
-                    return;
+                sleep(0,1);
                 inserted = publishDirectSingle(obj);
-
             }
         }
     }
 
+    private void sleep(int millis, int nanos) throws InterruptedException {
+        Thread.sleep(millis,nanos);
+    }
+
     private class ThreadLocalBatcher implements ThreadLocalInserter {
         private ArrayList<Object> _currentBatch;
-        private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 10_000_000);
+        private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 100_000_000);
 
         public ThreadLocalBatcher() {
             _currentBatch = new ArrayList<>(_inputBatchSize);
         }
 
-        public void add(Object obj) {
+        @Override
+        public void add(Object obj) throws InterruptedException {
             _currentBatch.add(obj);
 
             if (_currentBatch.size() >= _inputBatchSize) {
@@ -84,14 +87,14 @@ public class JCQueue implements IStatefulObject {
             }
         }
 
-        // Does not return till completely flushed or Thread.interrupted()
-        private void flush( ) {
+        // Does not return till completely flushed or Thread.interrupt() received
+        private void flush( ) throws InterruptedException {
             int publishCount = publishDirect(_currentBatch);
             _currentBatch.subList(0, publishCount).clear();
             while (!_currentBatch.isEmpty()) { // retry
-                LockSupport.parkNanos(1);
-                if(Thread.interrupted())
+                if(Thread.currentThread().isInterrupted())
                     return;
+                sleep(1000,0);
                 publishCount = publishDirect(_currentBatch);
                 if (publishCount==0)
                     fullMeter.record();
@@ -150,7 +153,7 @@ public class JCQueue implements IStatefulObject {
 
             state.put("capacity", capacity());
             state.put("population", wp - rp);
-            state.put("write_pos", wp);
+            state.put("write_pos", wp); // TODO: Roshan: eliminate these *_pos ?
             state.put("read_pos", rp);
             state.put("arrival_rate_secs", arrivalRateInSecs);
             state.put("sojourn_time_ms", sojournTime); //element sojourn time in milliseconds
@@ -225,11 +228,7 @@ public class JCQueue implements IStatefulObject {
         }
     }
 
-    public int consumeBatch(JCQueue.Consumer handler) {
-            return consumeBatchWhenAvailable(handler);
-    }
-
-    public int consumeBatchWhenAvailable(Consumer handler) {
+    public int consumeBatchWhenAvailable(JCQueue.Consumer handler) {
         try {
             return consumeBatchToCursor(handler);
         } catch (InterruptedException e) {
@@ -262,6 +261,7 @@ public class JCQueue implements IStatefulObject {
         return Thread.currentThread().getId();
     }
 
+    // Non Blocking. returns true/false indicating success/failure
     private boolean publishDirectSingle(Object obj)  {
         if( _buffer.offer(obj) ) {
             _metrics.notifyArrivals(1);
@@ -270,6 +270,7 @@ public class JCQueue implements IStatefulObject {
         return false;
     }
 
+    // Non Blocking. returns count of how many inserts succeeded
     private int publishDirect(ArrayList<Object> objs) {
         MessagePassingQueue.Supplier<Object> supplier =
                 new MessagePassingQueue.Supplier<Object> (){
@@ -284,6 +285,7 @@ public class JCQueue implements IStatefulObject {
         return count;
     }
 
+    /** Blocking call, that can be interrupted via Thread.interrupt() */
     public void publish(Object obj) {
         Long id = getId();
         JCQueue.ThreadLocalInserter batcher = _batchers.get(id);
@@ -296,7 +298,11 @@ public class JCQueue implements IStatefulObject {
             //This publisher thread is the only one ever creating a batcher for this thd id, so this is safe
             _batchers.put(id, batcher);
         }
-        batcher.add(obj);
+        try {
+            batcher.add(obj);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override

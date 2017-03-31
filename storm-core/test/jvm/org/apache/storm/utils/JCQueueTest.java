@@ -142,7 +142,6 @@ public class JCQueueTest extends TestCase {
         for (int i = 0; i < producerNum; i++) {
             producerThreads[i].interrupt();
         }
-        
         for (int i = 0; i < producerNum; i++) {
             producerThreads[i].join(TIMEOUT);
             assertFalse("producer "+i+" is still alive", producerThreads[i].isAlive());
