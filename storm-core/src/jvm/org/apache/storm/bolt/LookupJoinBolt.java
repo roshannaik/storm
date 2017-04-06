@@ -41,7 +41,7 @@ public class LookupJoinBolt extends BaseRichBolt  {
     private FieldSelector lookupStreamSelector = null;
     private int retentionTime;
     private int retentionCount;
-    private boolean countBasedRetention;
+    private boolean timeBasedRetention;
 
     LinkedHashMap<Object, Tuple> lookupBuffer;
     private ArrayDeque<Long> timeTracker; // for time based retention
@@ -69,8 +69,11 @@ public class LookupJoinBolt extends BaseRichBolt  {
     @Override
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
-        if (countBasedRetention) {
-            lookupBuffer = new LinkedHashMap<Object, Tuple>(retentionCount+1) { //
+        if (timeBasedRetention) { //  expiration handled explicitly
+            lookupBuffer = new LinkedHashMap<Object, Tuple>();
+            timeTracker = new ArrayDeque<Long>();
+        } else { // count Based Retention
+            lookupBuffer = new LinkedHashMap<Object, Tuple>(retentionCount) {
                 @Override
                 protected boolean removeEldestEntry(Map.Entry<Object, Tuple> eldest) {
                     boolean shouldRetire = size() > retentionCount;
@@ -80,8 +83,6 @@ public class LookupJoinBolt extends BaseRichBolt  {
                     return shouldRetire;
                 }
             };
-        } else { // timeBasedRetention ... expiration handled explicitly
-            lookupBuffer = new LinkedHashMap<Object, Tuple>();
         }
     }
 
@@ -93,50 +94,50 @@ public class LookupJoinBolt extends BaseRichBolt  {
     /**
      * Calls  LookupJoinBolt(Selector.SOURCE, dataStreamSelector, fieldName)
      * @param dataStream      Refers to the source component id (spout/bolt) whose data is to be treated as the realtime "DataStream".
-     * @param fieldName       Field to use for join. can be nested field name x.y.z  (assumes x & y are of type Map<> )
+     * @param joinField       Field to use for join. can be nested field name x.y.z  (assumes x & y are of type Map<> )
      */
-    public LookupJoinBolt(String dataStream, String fieldName) {
-        this(Selector.SOURCE, dataStream, fieldName);
+    public LookupJoinBolt(String dataStream, String joinField) {
+        this(Selector.SOURCE, dataStream, joinField);
     }
 
     /**
      * Calls  LookupJoinBolt(Selector.SOURCE, dataStreamSelector)
      * @param streamType   Specifies whether 'dataStream' refers to a stream name or source component id.
      * @param dataStream   Refers to the source component (spout/bolt) whose data is to be treated as the realtime "DataStream".
-     * @param fieldName    Field to use for join. Can be nested field name x.y.z  (assumes x & y are of type Map<> )
+     * @param joinField    Field to use for join. Can be nested field name x.y.z  (assumes x & y are of type Map<> )
      */
-    public LookupJoinBolt(Selector streamType, String dataStream, String fieldName) {
+    public LookupJoinBolt(Selector streamType, String dataStream, String joinField) {
         selectorType = streamType;
-        this.dataStreamSelector = new FieldSelector(dataStream, fieldName);
+        this.dataStreamSelector = new FieldSelector(dataStream, joinField);
     }
 
 
     /**
      * Introduces the buffered 'LookupStream' and the field to use for INNER join
      * @param lookupStream   Name of the stream (or source component Id) to be treated as a buffered 'LookupStream'
-     * @param fieldName      Field to join with. Can be nested field name x.y.z  (assumes x & y are of type Map<> )
+     * @param joinField      Field to join with. Can be nested field name x.y.z  (assumes x & y are of type Map<> )
      * @param retentionCount How many records to retain.
      * @return
      */
-    public LookupJoinBolt join(String lookupStream, String fieldName, BaseWindowedBolt.Count retentionCount) {
+    public LookupJoinBolt join(String lookupStream, String... joinField, BaseWindowedBolt.Count retentionCount) {
         if(lookupStream==null) {
             throw  new IllegalArgumentException("Only two streams can  be joined at a time. Cannot call join/leftJoin() more than once");
         }
         this.retentionCount = retentionCount.value;
-        this.lookupStreamSelector = new FieldSelector(lookupStream, fieldName);
+        this.lookupStreamSelector = new FieldSelector(lookupStream, joinField);
         this.joinType = JoinType.INNER;
-        this.countBasedRetention = true;
+        this.timeBasedRetention = false;
         return this;
     }
 
-    public LookupJoinBolt join(String lookupStreamSelector, BaseWindowedBolt.Duration retentionTime) {
-        if(lookupStreamSelector==null) {
+    public LookupJoinBolt join(String lookupStream, String joinField,  BaseWindowedBolt.Duration retentionTime) {
+        if(lookupStreamSelector!=null) {
             throw  new IllegalArgumentException("Only two streams can  be joined at a time. Cannot call join/leftJoin() more than once");
         }
-        this.lookupStreamSelector = new FieldSelector(lookupStreamSelector);
+        this.lookupStreamSelector = new FieldSelector(lookupStream, joinField);
         this.joinType = JoinType.INNER;
         this.retentionTime = retentionTime.value;
-        this.countBasedRetention = false;
+        this.timeBasedRetention = true;
         return this;
     }
 
@@ -169,13 +170,13 @@ public class LookupJoinBolt extends BaseRichBolt  {
     @Override
     public void execute(Tuple tuple) {
         String streamId = getStreamSelector(tuple);
-        if (!countBasedRetention) {
+        if (timeBasedRetention) {
             expireTimedOutEntries(lookupBuffer);
         }
         if ( isLookupStream(streamId) ) {
             Object key = findField(lookupStreamSelector, tuple);
             lookupBuffer.put(key, tuple);
-            if(!countBasedRetention) {
+            if(timeBasedRetention) {
                 timeTracker.add(System.currentTimeMillis());
             }
         } else if (isDataStream(streamId) ) {
@@ -184,15 +185,30 @@ public class LookupJoinBolt extends BaseRichBolt  {
             if (lookupTuple!=null) {
                 ArrayList<Object> outputTuple = doProjection(tuple, lookupTuple);
                 emit(outputTuple, tuple, lookupTuple);
+            } else if (joinType==JoinType.LEFT) { // && lookupTuple==null
+                ArrayList<Object> outputTuple = padNullFields(tuple);
+                emit(outputTuple, tuple, lookupTuple);
             }
             collector.ack(tuple);
         } else {
-            LOG.warn("Received tuple from unexpected stream/source : {}. Tuple will be dropped.", streamId)
+            LOG.warn("Received tuple from unexpected stream/source : {}. Tuple will be dropped.", streamId);
         }
     }
 
-    private static void expireTimedOutEntries(LinkedHashMap<Object, Tuple> lookupBuffer) {
+    private void expireTimedOutEntries(LinkedHashMap<Object, Tuple> lookupBuffer) {
+        Long expirationTime = System.currentTimeMillis() - retentionTime;
+        Long  insertionTime = timeTracker.peek();
+        while ( insertionTime!=null && expirationTime.compareTo(insertionTime) > 0) {
+            removeOldest(lookupBuffer);
+            timeTracker.pop();
+            insertionTime = timeTracker.peek();
+        }
+    }
 
+    private static void removeOldest(LinkedHashMap<Object, Tuple> lookupBuffer) {
+        Iterator<Map.Entry<Object, Tuple>> itr = lookupBuffer.entrySet().iterator();
+        itr.next();
+        itr.remove();
     }
 
     private void emit(ArrayList<Object> outputTuple, Tuple dataTuple, Tuple lookupTuple) {
@@ -256,6 +272,18 @@ public class LookupJoinBolt extends BaseRichBolt  {
         }
         return result;
     }
+
+    protected ArrayList<Object> padNullFields(Tuple tuple1) {
+        ArrayList<Object> result = new ArrayList<>(outputFields.length);
+        for ( int i = 0; i < outputFields.length; i++ ) {
+            FieldSelector outField = outputFields[i];
+            Object field = findField(outField, tuple1) ;
+            result.add(field); // adds null if field is not found in tuple1
+        }
+        return result;
+    }
+
+
 }
 
 class FieldSelector implements Serializable {
