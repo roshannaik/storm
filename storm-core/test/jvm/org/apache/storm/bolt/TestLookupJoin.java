@@ -24,8 +24,6 @@ import org.apache.storm.topology.base.BaseWindowedBolt;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.TupleImpl;
-import org.apache.storm.windowing.TupleWindow;
-import org.apache.storm.windowing.TupleWindowImpl;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -54,22 +52,24 @@ public class TestLookupJoin {
     String[] orderFields = {"id", "userId", "product", "price"};
 
     Object[][] orders = {
-            {11, 21, "book"  , 7},
-            {12, 22, "watch" , 3},
-            {13, 23, "chair" , 4},
-            {14, 29, "tv"    , 5},
-            {15, 30, "watch" , 2},
+            {11, 21, "book"  , 71},
+            {12, 22, "watch" , 330},
+            {13, 23, "chair" , 500},
+            {14, 29, "tv"    , 2000},
+            {15, 30, "watch" , 400},
     };
 
-
     @Test
-    public void testTrivial() throws Exception {
+    public void testBasicCount() throws Exception {
         ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
         ArrayList<Tuple> adImpressionStream = makeStream("ads", adImpressionFields, adImpressions);
 
-        LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM, "orders", orderFields[1])
-                .join("ads", adImpressionFields[1], new BaseWindowedBolt.Duration(3, TimeUnit.SECONDS) )
+        LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM)
+                .dataStream("orders")
+                .lookupStream("ads", new BaseWindowedBolt.Count(10))
+                .joinOn(orderFields[1], adImpressionFields[1] )
                 .select("orders:id,ads:userId,product,price");
+
         MockCollector collector = new MockCollector();
         bolt.prepare(null, null, collector);
 
@@ -81,12 +81,38 @@ public class TestLookupJoin {
         }
 
         printResults(collector);
-//        Assert.assertEquals( 3, collector.actualResults.size() );
+        Assert.assertEquals( 5, collector.actualResults.size() );
     }
+
+    @Test
+    public void testBasicTimeRetention() throws Exception {
+        ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
+        ArrayList<Tuple> adImpressionStream = makeStream("ads", adImpressionFields, adImpressions);
+
+        LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM)
+                .dataStream("orders")
+                .lookupStream("ads", new BaseWindowedBolt.Duration(2, TimeUnit.SECONDS))
+                .joinOn(orderFields[1], adImpressionFields[1] )
+                .select("orders:id,ads:userId,product,price");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+
+        for (Tuple tuple : adImpressionStream) {
+            bolt.execute(tuple);
+        }
+        for (Tuple tuple : orderStream) {
+            bolt.execute(tuple);
+        }
+
+        printResults(collector);
+        Assert.assertEquals( 5, collector.actualResults.size() );
+    }
+
 
     private static ArrayList<Tuple> makeStream(String streamName, String[] fieldNames, Object[][] data) {
         ArrayList<Tuple> result = new ArrayList<>();
-        TestJoinBolt.MockContext mockContext = new TestJoinBolt.MockContext(fieldNames);
+        MockContext mockContext = new MockContext(fieldNames);
 
         for (Object[] record : data) {
             TupleImpl rec = new TupleImpl(mockContext, Arrays.asList(record), 0, streamName);

@@ -18,6 +18,7 @@
 
 package org.apache.storm.bolt;
 
+import com.google.common.collect.LinkedListMultimap;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -34,17 +35,19 @@ import java.util.*;
 
 public class LookupJoinBolt extends BaseRichBolt  {
     private static final Logger LOG = LoggerFactory.getLogger(LookupJoinBolt.class);
+    private String dataStream;
+    private String lookupStream;
 
     protected FieldSelector[] outputFields = null;  // specified via bolt.select() ... used in declaring Output fields
-    private String outputStreamName;
-    private final FieldSelector dataStreamSelector;
-    private FieldSelector lookupStreamSelector = null;
+    private String outputStream;
     private int retentionTime;
     private int retentionCount;
     private boolean timeBasedRetention;
 
-    LinkedHashMap<Object, Tuple> lookupBuffer;
+    private LinkedListMultimap<String, Tuple> lookupBuffer;
+
     private ArrayDeque<Long> timeTracker; // for time based retention
+    private ArrayList<JoinInfo> joinCriteria = new ArrayList<>();
 
     private OutputCollector collector;
 
@@ -58,83 +61,99 @@ public class LookupJoinBolt extends BaseRichBolt  {
         for( int i=0; i<outputFields.length; ++i ) {
             outputFieldNames[i] = outputFields[i].getOutputName() ;
         }
-        if (outputStreamName!=null) {
-            declarer.declareStream(outputStreamName, new Fields(outputFieldNames));
+        if (outputStream !=null) {
+            declarer.declareStream(outputStream, new Fields(outputFieldNames));
         } else {
             declarer.declare(new Fields(outputFieldNames));
         }
     }
 
 
+
     @Override
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
-        if (timeBasedRetention) { //  expiration handled explicitly
-            lookupBuffer = new LinkedHashMap<Object, Tuple>();
+        if (timeBasedRetention) {
+            lookupBuffer =  LinkedListMultimap.create(50_000);
             timeTracker = new ArrayDeque<Long>();
         } else { // count Based Retention
-            lookupBuffer = new LinkedHashMap<Object, Tuple>(retentionCount) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<Object, Tuple> eldest) {
-                    boolean shouldRetire = size() > retentionCount;
-                    if (shouldRetire) {
-                        collector.ack(eldest.getValue());
-                    }
-                    return shouldRetire;
-                }
-            };
+            lookupBuffer = LinkedListMultimap.create(retentionCount);
         }
     }
+
+//    @Override
+//    public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
+//        this.collector = collector;
+//        if (timeBasedRetention) { //  expiration handled explicitly
+//            lookupBuffer =  LinkedListMultimap.create(50_000);
+//            timeTracker = new ArrayDeque<Long>();
+//        } else { // count Based Retention
+//            lookupBuffer = LinkedListMultimap.create(retentionCount) {
+//                @Override
+//                protected boolean removeEldestEntry(Map.Entry<Object, Tuple> eldest) {
+//                    boolean shouldRetire = size() > retentionCount;
+//                    if (shouldRetire) {
+//                        collector.ack(eldest.getValue());
+//                    }
+//                    return shouldRetire;
+//                }
+//            };
+//        }
+//    }
 
     // Use streamId, source component name OR field in tuple to distinguish incoming tuple streams
     public enum Selector { STREAM, SOURCE }
     protected final Selector selectorType;
 
-
-    /**
-     * Calls  LookupJoinBolt(Selector.SOURCE, dataStreamSelector, fieldName)
-     * @param dataStream      Refers to the source component id (spout/bolt) whose data is to be treated as the realtime "DataStream".
-     * @param joinField       Field to use for join. can be nested field name x.y.z  (assumes x & y are of type Map<> )
-     */
-    public LookupJoinBolt(String dataStream, String joinField) {
-        this(Selector.SOURCE, dataStream, joinField);
-    }
-
     /**
      * Calls  LookupJoinBolt(Selector.SOURCE, dataStreamSelector)
      * @param streamType   Specifies whether 'dataStream' refers to a stream name or source component id.
-     * @param dataStream   Refers to the source component (spout/bolt) whose data is to be treated as the realtime "DataStream".
-     * @param joinField    Field to use for join. Can be nested field name x.y.z  (assumes x & y are of type Map<> )
      */
-    public LookupJoinBolt(Selector streamType, String dataStream, String joinField) {
+    public LookupJoinBolt(Selector streamType) {
         selectorType = streamType;
-        this.dataStreamSelector = new FieldSelector(dataStream, joinField);
     }
 
 
     /**
-     * Introduces the buffered 'LookupStream' and the field to use for INNER join
+     * Field to use for join. Can be nested field name x.y.z  (assumes x & y are of type Map<> )
+     * @param dataStreamField    Field to use for join on data stream. Can be nested field name x.y.z  (assumes x & y are of type Map<> )
+     * @param lookupStreamField  Field to use for join on lookup stream.
+     * @return
+     */
+    public LookupJoinBolt joinOn(String dataStreamField, String lookupStreamField) {
+        FieldSelector dataField = new FieldSelector(dataStream, dataStreamField);
+        FieldSelector lookupField = new FieldSelector(lookupStream, lookupStreamField);
+
+        if( dataField.equals(lookupField) ) {
+            throw new IllegalArgumentException("Both field selectors refer to same field: " + dataField.getOutputName());
+        }
+        joinCriteria.add(new JoinInfo(lookupField, dataField));
+        return this;
+    }
+
+
+    /**
+     * Introduces the buffered 'LookupStream' and its retention policy
      * @param lookupStream   Name of the stream (or source component Id) to be treated as a buffered 'LookupStream'
-     * @param joinField      Field to join with. Can be nested field name x.y.z  (assumes x & y are of type Map<> )
      * @param retentionCount How many records to retain.
      * @return
      */
-    public LookupJoinBolt join(String lookupStream, String... joinField, BaseWindowedBolt.Count retentionCount) {
-        if(lookupStream==null) {
-            throw  new IllegalArgumentException("Only two streams can  be joined at a time. Cannot call join/leftJoin() more than once");
+    public LookupJoinBolt lookupStream(String lookupStream, BaseWindowedBolt.Count retentionCount) {
+        if(this.lookupStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
         }
+        this.lookupStream = lookupStream;
         this.retentionCount = retentionCount.value;
-        this.lookupStreamSelector = new FieldSelector(lookupStream, joinField);
         this.joinType = JoinType.INNER;
         this.timeBasedRetention = false;
         return this;
     }
 
-    public LookupJoinBolt join(String lookupStream, String joinField,  BaseWindowedBolt.Duration retentionTime) {
-        if(lookupStreamSelector!=null) {
-            throw  new IllegalArgumentException("Only two streams can  be joined at a time. Cannot call join/leftJoin() more than once");
+    public LookupJoinBolt lookupStream(String lookupStream, BaseWindowedBolt.Duration retentionTime) {
+        if(this.lookupStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
         }
-        this.lookupStreamSelector = new FieldSelector(lookupStream, joinField);
+        this.lookupStream = lookupStream;
         this.joinType = JoinType.INNER;
         this.retentionTime = retentionTime.value;
         this.timeBasedRetention = true;
@@ -142,9 +161,30 @@ public class LookupJoinBolt extends BaseRichBolt  {
     }
 
 
+    public LookupJoinBolt dataStream(String dataStream) {
+        if(this.dataStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Data stream more than once");
+        }
+        this.dataStream = dataStream;
+        this.joinType = JoinType.INNER;
+        return this;
+    }
+
+
+//    public LookupJoinBolt dataStream(String dataStream, BaseWindowedBolt.Count retentionCount) {
+//        if(this.dataStream!=null) {
+//            throw  new IllegalArgumentException("Cannot declare a Data stream more than once");
+//        }
+//        this.dataStream = dataStream;
+//        this.retentionCount = retentionCount.value;
+//        timeBasedRetention = false;
+//        this.joinType = JoinType.INNER;
+//        return this;
+//    }
+//
     /**
      * Specify output fields
-     *      e.g: .select("field1, stream2:field2, field3")
+     *      e.g: .select("lookupField, stream2:dataField, field3")
      * Nested Key names are supported for nested types:
      *      e.g: .select("outerKey1.innerKey1, outerKey1.innerKey2, stream3:outerKey2.innerKey3)"
      * Inner types (non leaf) must be Map<> in order to support nested lookup using this dot notation
@@ -163,7 +203,7 @@ public class LookupJoinBolt extends BaseRichBolt  {
     }
 
     public LookupJoinBolt withOutputStream(String streamName) {
-        this.outputStreamName = streamName;
+        this.outputStream = streamName;
         return this;
     }
 
@@ -171,22 +211,30 @@ public class LookupJoinBolt extends BaseRichBolt  {
     public void execute(Tuple tuple) {
         String streamId = getStreamSelector(tuple);
         if (timeBasedRetention) {
-            expireTimedOutEntries(lookupBuffer);
+            expireAndAckTimedOutEntries(lookupBuffer);
         }
         if ( isLookupStream(streamId) ) {
-            Object key = findField(lookupStreamSelector, tuple);
+            String key = makeLookupTupleKey(tuple);
             lookupBuffer.put(key, tuple);
             if(timeBasedRetention) {
                 timeTracker.add(System.currentTimeMillis());
+            } else {  // count based Rotation
+                if (lookupBuffer.size() > retentionCount) {
+                    Tuple expired = removeHead(lookupBuffer);
+                    collector.ack(expired);
+                }
             }
         } else if (isDataStream(streamId) ) {
-            Object key = findField(dataStreamSelector, tuple);
-            Tuple lookupTuple = lookupBuffer.get(key);
-            if (lookupTuple!=null) {
-                ArrayList<Object> outputTuple = doProjection(tuple, lookupTuple);
-                emit(outputTuple, tuple, lookupTuple);
-            } else if (joinType==JoinType.LEFT) { // && lookupTuple==null
-                ArrayList<Object> outputTuple = padNullFields(tuple);
+            List<Tuple> matches = joinWithLookupStream(tuple);
+            if (matches==null && joinType==JoinType.LEFT) {
+                ArrayList<Object> outputTuple = doProjection(tuple, null);
+                emit(outputTuple, tuple);
+                collector.ack(tuple);
+                return;
+            }
+
+            for (Tuple lookupTuple : matches) {
+                ArrayList<Object> outputTuple = doProjection(lookupTuple, tuple);
                 emit(outputTuple, tuple, lookupTuple);
             }
             collector.ack(tuple);
@@ -195,33 +243,72 @@ public class LookupJoinBolt extends BaseRichBolt  {
         }
     }
 
-    private void expireTimedOutEntries(LinkedHashMap<Object, Tuple> lookupBuffer) {
+    private String makeLookupTupleKey(Tuple tuple) {
+        StringBuffer key = new StringBuffer();
+        for (JoinInfo ji : joinCriteria) {
+            String partialKey = findField(ji.lookupField, tuple).toString();
+            key.append( partialKey );
+            key.append(".");
+        }
+        return key.toString();
+    }
+
+    private String makeDataTupleKey(Tuple tuple) {
+        StringBuffer key = new StringBuffer();
+        for (JoinInfo ji : joinCriteria) {
+            String partialKey = findField(ji.dataField, tuple).toString();
+            key.append( partialKey );
+            key.append(".");
+        }
+        return key.toString();
+    }
+
+    // returns null if no match
+    private List<Tuple> joinWithLookupStream(Tuple lookupTuple) {
+        String key = makeDataTupleKey(lookupTuple);
+        return lookupBuffer.get(key);
+    }
+
+    // Removes timedout entries from lookupBuffer & timeTracker. Acks tuples being expired.
+    private void expireAndAckTimedOutEntries(LinkedListMultimap<String, Tuple> lookupBuffer) {
         Long expirationTime = System.currentTimeMillis() - retentionTime;
         Long  insertionTime = timeTracker.peek();
         while ( insertionTime!=null && expirationTime.compareTo(insertionTime) > 0) {
-            removeOldest(lookupBuffer);
+            Tuple expired = removeHead(lookupBuffer);
             timeTracker.pop();
+            collector.ack(expired);
             insertionTime = timeTracker.peek();
         }
     }
 
-    private static void removeOldest(LinkedHashMap<Object, Tuple> lookupBuffer) {
-        Iterator<Map.Entry<Object, Tuple>> itr = lookupBuffer.entrySet().iterator();
-        itr.next();
-        itr.remove();
+    private static Tuple removeHead(LinkedListMultimap<String, Tuple> lookupBuffer) {
+        List<Map.Entry<String, Tuple>> entries = lookupBuffer.entries();
+        return entries.remove(0).getValue();
+    }
+
+
+    private void emit(ArrayList<Object> outputTuple, Tuple dataTuple) {
+        Tuple anchor = dataTuple;
+        if ( outputStream ==null )
+            collector.emit(anchor, outputTuple);
+        else
+            collector.emit(outputStream, anchor, outputTuple);
     }
 
     private void emit(ArrayList<Object> outputTuple, Tuple dataTuple, Tuple lookupTuple) {
         List<Tuple> anchors = Arrays.asList(dataTuple, lookupTuple);
-        collector.emit(anchors, outputTuple);
+        if ( outputStream ==null )
+            collector.emit(anchors, outputTuple);
+        else
+            collector.emit(outputStream, anchors, outputTuple);
     }
 
     private boolean isDataStream(String streamId) {
-        return streamId.equals(dataStreamSelector.getStreamName());
+        return streamId.equals(dataStream);
     }
 
     private boolean isLookupStream(String streamId) {
-        return streamId.equals(lookupStreamSelector.getStreamName());
+        return streamId.equals(lookupStream);
     }
 
     // Returns either the source component name or the stream name for the tuple
@@ -238,6 +325,9 @@ public class LookupJoinBolt extends BaseRichBolt  {
 
     // Extract the field from tuple. Field may be nested field (x.y.z)
     protected Object findField(FieldSelector fieldSelector, Tuple tuple) {
+        if (tuple==null) {
+            return null;
+        }
         // very stream name matches, it stream name was specified
         if ( fieldSelector.streamName!=null &&
                 !fieldSelector.streamName.equalsIgnoreCase( getStreamSelector(tuple) ) ) {
@@ -260,7 +350,13 @@ public class LookupJoinBolt extends BaseRichBolt  {
         return curr;
     }
 
-    // Performs projection on the tuples based on 'projectionFields'
+    /** Performs projection on the tuples based on 'projectionFields'
+     *
+     * @param tuple1   can be null
+     * @param tuple2   can be null
+     * @return   project fields
+     */
+
     protected ArrayList<Object> doProjection(Tuple tuple1, Tuple tuple2) {
         ArrayList<Object> result = new ArrayList<>(outputFields.length);
         for ( int i = 0; i < outputFields.length; i++ ) {
@@ -273,20 +369,12 @@ public class LookupJoinBolt extends BaseRichBolt  {
         return result;
     }
 
-    protected ArrayList<Object> padNullFields(Tuple tuple1) {
-        ArrayList<Object> result = new ArrayList<>(outputFields.length);
-        for ( int i = 0; i < outputFields.length; i++ ) {
-            FieldSelector outField = outputFields[i];
-            Object field = findField(outField, tuple1) ;
-            result.add(field); // adds null if field is not found in tuple1
-        }
-        return result;
-    }
-
-
 }
 
+
 class FieldSelector implements Serializable {
+    final static long serialVersionUID = 2L;
+
     String streamName;    // can be null;
     String[] field;       // nested field "x.y.z"  becomes => String["x","y","z"]
     String outputName;    // either "stream1:x.y.z" or "x.y.z" depending on whether stream name is present.
@@ -317,18 +405,13 @@ class FieldSelector implements Serializable {
      * @param fieldDescriptor  Simple fieldDescriptor like "x.y.z" and w/o a 'stream1:' stream qualifier.
      */
     public FieldSelector(String stream, String fieldDescriptor)  {
-        this(fieldDescriptor);
+        this(stream + ":" + fieldDescriptor);
         if(fieldDescriptor.indexOf(":")>=0) {
             throw new IllegalArgumentException("Not expecting stream qualifier ':' in '" + fieldDescriptor
                     + "'. Stream name '" + stream +  "' is implicit in this context");
         }
         this.streamName = stream;
     }
-
-    public FieldSelector(String stream, String[] field)  {
-        this( stream, String.join(".", field) );
-    }
-
 
     public String getStreamName() {
         return streamName;
@@ -342,8 +425,53 @@ class FieldSelector implements Serializable {
         return toString();
     }
 
+    public String getFullName() {
+        if(streamName!=null)
+            return streamName + ":" + field;
+        return getOutputName();
+    }
+
     @Override
     public String toString() {
         return outputName;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        try {
+            FieldSelector that = (FieldSelector) o;
+            return outputName != null ? outputName.equals(that.outputName) : that.outputName == null;
+        } catch (ClassCastException e) {
+            return false;
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return outputName != null ? outputName.hashCode() : 0;
+    }
 }
+
+
+class JoinInfo implements Serializable {
+    final static long serialVersionUID = 1L;
+
+    FieldSelector lookupField;           // field for the current stream
+    FieldSelector dataField;      // field for the other (2nd) stream
+
+
+    public JoinInfo(FieldSelector lookupField, FieldSelector dataField) {
+        this.lookupField = lookupField;
+        this.dataField = dataField;
+    }
+
+    public FieldSelector getLookupField() {
+        return lookupField;
+    }
+
+    public String[] getDataField() {
+        return dataField.getField();
+    }
+
+} // class JoinInfo
