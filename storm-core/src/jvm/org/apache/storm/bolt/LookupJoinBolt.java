@@ -44,15 +44,16 @@ public class LookupJoinBolt extends BaseRichBolt  {
     private int retentionCount;
     private boolean timeBasedRetention;
 
-    private LinkedListMultimap<String, Tuple> lookupBuffer;
+    private LinkedListMultimap<String, TupleInfo> lookupBuffer;
 
     private ArrayDeque<Long> timeTracker; // for time based retention
     private ArrayList<JoinInfo> joinCriteria = new ArrayList<>();
 
     private OutputCollector collector;
+    private boolean dropOlderDuplicates;
 
 
-    protected enum JoinType {INNER, LEFT}
+    protected enum JoinType {INNER, LEFT, RIGHT, OUTER}
     private JoinType joinType;
 
     @Override
@@ -68,8 +69,6 @@ public class LookupJoinBolt extends BaseRichBolt  {
         }
     }
 
-
-
     @Override
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
@@ -80,26 +79,6 @@ public class LookupJoinBolt extends BaseRichBolt  {
             lookupBuffer = LinkedListMultimap.create(retentionCount);
         }
     }
-
-//    @Override
-//    public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
-//        this.collector = collector;
-//        if (timeBasedRetention) { //  expiration handled explicitly
-//            lookupBuffer =  LinkedListMultimap.create(50_000);
-//            timeTracker = new ArrayDeque<Long>();
-//        } else { // count Based Retention
-//            lookupBuffer = LinkedListMultimap.create(retentionCount) {
-//                @Override
-//                protected boolean removeEldestEntry(Map.Entry<Object, Tuple> eldest) {
-//                    boolean shouldRetire = size() > retentionCount;
-//                    if (shouldRetire) {
-//                        collector.ack(eldest.getValue());
-//                    }
-//                    return shouldRetire;
-//                }
-//            };
-//        }
-//    }
 
     // Use streamId, source component name OR field in tuple to distinguish incoming tuple streams
     public enum Selector { STREAM, SOURCE }
@@ -133,55 +112,128 @@ public class LookupJoinBolt extends BaseRichBolt  {
 
 
     /**
-     * Introduces the buffered 'LookupStream' and its retention policy
+     * Introduces the buffered 'LookupStream' for inner join and retention policy
      * @param lookupStream   Name of the stream (or source component Id) to be treated as a buffered 'LookupStream'
      * @param retentionCount How many records to retain.
      * @return
      */
-    public LookupJoinBolt lookupStream(String lookupStream, BaseWindowedBolt.Count retentionCount) {
+    public LookupJoinBolt innerJoin(String lookupStream, BaseWindowedBolt.Count retentionCount, boolean dropOlderDuplicates) {
         if(this.lookupStream!=null) {
             throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
         }
         this.lookupStream = lookupStream;
+        this.dropOlderDuplicates = dropOlderDuplicates;
         this.retentionCount = retentionCount.value;
-        this.joinType = JoinType.INNER;
         this.timeBasedRetention = false;
+        this.joinType = JoinType.INNER;
         return this;
     }
 
-    public LookupJoinBolt lookupStream(String lookupStream, BaseWindowedBolt.Duration retentionTime) {
-        if(this.lookupStream!=null) {
+    public LookupJoinBolt innerJoin(String lookupStream, BaseWindowedBolt.Duration retentionTime, boolean dropOlderDuplicates) {
+        if (this.lookupStream!=null) {
             throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
         }
+        if (retentionTime.value<=0) {
+            throw  new IllegalArgumentException("Retention time must be positive number");
+        }
+
         this.lookupStream = lookupStream;
-        this.joinType = JoinType.INNER;
+        this.dropOlderDuplicates = dropOlderDuplicates;
         this.retentionTime = retentionTime.value;
         this.timeBasedRetention = true;
+        this.joinType = JoinType.INNER;
         return this;
     }
 
+    public LookupJoinBolt leftJoin(String lookupStream, BaseWindowedBolt.Count retentionCount, boolean dropOlderDuplicates) {
+        if(this.lookupStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
+        }
+        this.lookupStream = lookupStream;
+        this.dropOlderDuplicates = dropOlderDuplicates;
+        this.retentionCount = retentionCount.value;
+        this.timeBasedRetention = false;
+        this.joinType = JoinType.LEFT;
+        return this;
+    }
+
+    public LookupJoinBolt leftJoin(String lookupStream, BaseWindowedBolt.Duration retentionTime, boolean dropOlderDuplicates) {
+        if(this.lookupStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
+        }
+        if (retentionTime.value<=0) {
+            throw  new IllegalArgumentException("Retention time must be positive number");
+        }
+        this.lookupStream = lookupStream;
+        this.dropOlderDuplicates = dropOlderDuplicates;
+        this.retentionTime = retentionTime.value;
+        this.timeBasedRetention = true;
+        this.joinType = JoinType.LEFT;
+        return this;
+    }
+
+    public LookupJoinBolt rightJoin(String lookupStream, BaseWindowedBolt.Count retentionCount, boolean dropOlderDuplicates) {
+        if(this.lookupStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
+        }
+        this.lookupStream = lookupStream;
+        this.dropOlderDuplicates = dropOlderDuplicates;
+        this.retentionCount = retentionCount.value;
+        this.timeBasedRetention = false;
+        this.joinType = JoinType.RIGHT;
+        return this;
+    }
+
+    public LookupJoinBolt rightJoin(String lookupStream, BaseWindowedBolt.Duration retentionTime, boolean dropOlderDuplicates) {
+        if(this.lookupStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
+        }
+        if (retentionTime.value<=0) {
+            throw  new IllegalArgumentException("Retention time must be positive number");
+        }
+        this.lookupStream = lookupStream;
+        this.dropOlderDuplicates = dropOlderDuplicates;
+        this.retentionTime = retentionTime.value;
+        this.timeBasedRetention = true;
+        this.joinType = JoinType.RIGHT;
+        return this;
+    }
+
+    public LookupJoinBolt outerJoin(String lookupStream, BaseWindowedBolt.Count retentionCount, boolean dropOlderDuplicates) {
+        if(this.lookupStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
+        }
+        this.lookupStream = lookupStream;
+        this.dropOlderDuplicates = dropOlderDuplicates;
+        this.retentionCount = retentionCount.value;
+        this.timeBasedRetention = false;
+        this.joinType = JoinType.OUTER;
+        return this;
+    }
+
+    public LookupJoinBolt outerJoin(String lookupStream, BaseWindowedBolt.Duration retentionTime, boolean dropOlderDuplicates) {
+        if(this.lookupStream!=null) {
+            throw  new IllegalArgumentException("Cannot declare a Lookup stream more than once");
+        }
+        if (retentionTime.value<=0) {
+            throw  new IllegalArgumentException("Retention time must be positive number");
+        }
+        this.lookupStream = lookupStream;
+        this.dropOlderDuplicates = dropOlderDuplicates;
+        this.retentionTime = retentionTime.value;
+        this.timeBasedRetention = true;
+        this.joinType = JoinType.OUTER;
+        return this;
+    }
 
     public LookupJoinBolt dataStream(String dataStream) {
-        if(this.dataStream!=null) {
+        if (this.dataStream!=null) {
             throw  new IllegalArgumentException("Cannot declare a Data stream more than once");
         }
         this.dataStream = dataStream;
-        this.joinType = JoinType.INNER;
         return this;
     }
 
-
-//    public LookupJoinBolt dataStream(String dataStream, BaseWindowedBolt.Count retentionCount) {
-//        if(this.dataStream!=null) {
-//            throw  new IllegalArgumentException("Cannot declare a Data stream more than once");
-//        }
-//        this.dataStream = dataStream;
-//        this.retentionCount = retentionCount.value;
-//        timeBasedRetention = false;
-//        this.joinType = JoinType.INNER;
-//        return this;
-//    }
-//
     /**
      * Specify output fields
      *      e.g: .select("lookupField, stream2:dataField, field3")
@@ -209,33 +261,43 @@ public class LookupJoinBolt extends BaseRichBolt  {
 
     @Override
     public void execute(Tuple tuple) {
-        String streamId = getStreamSelector(tuple);
         if (timeBasedRetention) {
             expireAndAckTimedOutEntries(lookupBuffer);
         }
+
+        String streamId = getStreamSelector(tuple);
         if ( isLookupStream(streamId) ) {
             String key = makeLookupTupleKey(tuple);
-            lookupBuffer.put(key, tuple);
+            if(dropOlderDuplicates)
+                lookupBuffer.removeAll(key);
+            lookupBuffer.put(key, new TupleInfo(tuple) );
+
             if(timeBasedRetention) {
                 timeTracker.add(System.currentTimeMillis());
             } else {  // count based Rotation
                 if (lookupBuffer.size() > retentionCount) {
-                    Tuple expired = removeHead(lookupBuffer);
-                    collector.ack(expired);
+                    TupleInfo expired = removeHead(lookupBuffer);
+                    if( (joinType==JoinType.RIGHT) || (joinType==JoinType.OUTER)  ) {
+                        emitUnMatchedTuples(expired);
+                    }
+                    collector.ack(expired.tuple);
                 }
             }
         } else if (isDataStream(streamId) ) {
-            List<Tuple> matches = joinWithLookupStream(tuple);
-            if (matches==null && joinType==JoinType.LEFT) {
-                ArrayList<Object> outputTuple = doProjection(tuple, null);
-                emit(outputTuple, tuple);
+            List<TupleInfo> matches = matchWithLookupStream(tuple);
+            if (matches==null || matches.isEmpty() ) {  // no match
+                if (joinType==JoinType.LEFT ||  joinType==JoinType.OUTER ) {
+                    ArrayList<Object> outputTuple = doProjection(tuple, null);
+                    emit(outputTuple, tuple);
+                    return;
+                }
                 collector.ack(tuple);
-                return;
             }
 
-            for (Tuple lookupTuple : matches) {
-                ArrayList<Object> outputTuple = doProjection(lookupTuple, tuple);
-                emit(outputTuple, tuple, lookupTuple);
+            for (TupleInfo lookupTuple : matches) { // match found
+                lookupTuple.unmatched = false;
+                ArrayList<Object> outputTuple = doProjection(lookupTuple.tuple, tuple);
+                emit(outputTuple, tuple, lookupTuple.tuple);
             }
             collector.ack(tuple);
         } else {
@@ -264,39 +326,47 @@ public class LookupJoinBolt extends BaseRichBolt  {
     }
 
     // returns null if no match
-    private List<Tuple> joinWithLookupStream(Tuple lookupTuple) {
+    private List<TupleInfo> matchWithLookupStream(Tuple lookupTuple) {
         String key = makeDataTupleKey(lookupTuple);
         return lookupBuffer.get(key);
     }
 
     // Removes timedout entries from lookupBuffer & timeTracker. Acks tuples being expired.
-    private void expireAndAckTimedOutEntries(LinkedListMultimap<String, Tuple> lookupBuffer) {
+    private void expireAndAckTimedOutEntries(LinkedListMultimap<String, TupleInfo> lookupBuffer) {
         Long expirationTime = System.currentTimeMillis() - retentionTime;
         Long  insertionTime = timeTracker.peek();
         while ( insertionTime!=null && expirationTime.compareTo(insertionTime) > 0) {
-            Tuple expired = removeHead(lookupBuffer);
+            TupleInfo expired = removeHead(lookupBuffer);
             timeTracker.pop();
-            collector.ack(expired);
+            if ( joinType == JoinType.RIGHT || joinType == JoinType.OUTER )
+                emitUnMatchedTuples(expired);
+            collector.ack(expired.tuple);
             insertionTime = timeTracker.peek();
         }
     }
 
-    private static Tuple removeHead(LinkedListMultimap<String, Tuple> lookupBuffer) {
-        List<Map.Entry<String, Tuple>> entries = lookupBuffer.entries();
+    private void emitUnMatchedTuples(TupleInfo expired) {
+        if(expired.unmatched) {
+            ArrayList<Object> outputTuple = doProjection(expired.tuple, null);
+            emit(outputTuple, expired.tuple);
+        }
+    }
+
+    private static TupleInfo removeHead(LinkedListMultimap<String, TupleInfo> lookupBuffer) {
+        List<Map.Entry<String, TupleInfo>> entries = lookupBuffer.entries();
         return entries.remove(0).getValue();
     }
 
 
-    private void emit(ArrayList<Object> outputTuple, Tuple dataTuple) {
-        Tuple anchor = dataTuple;
+    private void emit(ArrayList<Object> outputTuple, Tuple anchor) {
         if ( outputStream ==null )
             collector.emit(anchor, outputTuple);
         else
             collector.emit(outputStream, anchor, outputTuple);
     }
 
-    private void emit(ArrayList<Object> outputTuple, Tuple dataTuple, Tuple lookupTuple) {
-        List<Tuple> anchors = Arrays.asList(dataTuple, lookupTuple);
+    private void emit(ArrayList<Object> outputTuple, Tuple dataTupleAnchor, Tuple lookupTupleAnchor) {
+        List<Tuple> anchors = Arrays.asList(dataTupleAnchor, lookupTupleAnchor);
         if ( outputStream ==null )
             collector.emit(anchors, outputTuple);
         else
@@ -413,10 +483,6 @@ class FieldSelector implements Serializable {
         this.streamName = stream;
     }
 
-    public String getStreamName() {
-        return streamName;
-    }
-
     public String[] getField() {
         return field;
     }
@@ -466,12 +532,13 @@ class JoinInfo implements Serializable {
         this.dataField = dataField;
     }
 
-    public FieldSelector getLookupField() {
-        return lookupField;
-    }
-
-    public String[] getDataField() {
-        return dataField.getField();
-    }
-
 } // class JoinInfo
+
+class TupleInfo {
+    boolean unmatched = true; // indicates if 'tuple' has been matched with at least one tuple from other stream
+    Tuple tuple;
+
+    public TupleInfo(Tuple tuple) {
+        this.tuple = tuple;
+    }
+}

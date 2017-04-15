@@ -56,17 +56,45 @@ public class TestLookupJoin {
             {12, 22, "watch" , 330},
             {13, 23, "chair" , 500},
             {14, 29, "tv"    , 2000},
-            {15, 30, "watch" , 400},
+            {15, 30, "watch" , 400},     //  matches adImpression on [userID] but not on [userId & product]
+            {16, 31, "mattress" , 900},  //  this has no match whatsoever in adImpressions
     };
 
+
+
     @Test
-    public void testBasicCount() throws Exception {
+    public void testSingleKey_InnerJoin_CountRetention() throws Exception {
         ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
         ArrayList<Tuple> adImpressionStream = makeStream("ads", adImpressionFields, adImpressions);
 
         LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM)
                 .dataStream("orders")
-                .lookupStream("ads", new BaseWindowedBolt.Count(10))
+                .innerJoin("ads", new BaseWindowedBolt.Count(10), false)
+                .joinOn(orderFields[1], adImpressionFields[1] )
+                .select("orders:id,ads:userId,ads:product,orders:product,price");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+
+        for (Tuple tuple : adImpressionStream) {
+            bolt.execute(tuple);
+        }
+        for (Tuple tuple : orderStream) {
+            bolt.execute(tuple);
+        }
+
+        printResults(collector);
+        Assert.assertEquals( 5, collector.actualResults.size() );
+    }
+
+    @Test
+    public void testSingleKey_InnerJoin_TimeRetention() throws Exception {
+        ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
+        ArrayList<Tuple> adImpressionStream = makeStream("ads", adImpressionFields, adImpressions);
+
+        LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM)
+                .dataStream("orders")
+                .innerJoin("ads", new BaseWindowedBolt.Duration(2, TimeUnit.SECONDS), false)
                 .joinOn(orderFields[1], adImpressionFields[1] )
                 .select("orders:id,ads:userId,product,price");
 
@@ -85,15 +113,105 @@ public class TestLookupJoin {
     }
 
     @Test
-    public void testBasicTimeRetention() throws Exception {
+    public void testSingleKey_LeftJoin() throws Exception {
+        ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
+        ArrayList<Tuple> adImpressionStream = makeStream("ads", adImpressionFields, adImpressions);
+
+        LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM)
+                .dataStream("ads")
+                .leftJoin("orders", new BaseWindowedBolt.Count(10), false)
+                .joinOn(adImpressionFields[1],orderFields[1] )
+                .select("orders:id,ads:userId,ads:product,orders:product,price");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+
+        for (Tuple tuple : orderStream) {
+            bolt.execute(tuple);
+        }
+
+        for (Tuple tuple : adImpressionStream) {
+            bolt.execute(tuple);
+        }
+
+        printResults(collector);
+        Assert.assertEquals( adImpressionStream.size(), collector.actualResults.size() );
+    }
+
+    @Test
+    public void testSingleKey_RightJoin() throws Exception {
+        ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
+        ArrayList<Tuple> adImpressionStream = makeStream("ads", adImpressionFields, adImpressions);
+
+        LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM)
+                .dataStream("ads")
+                .rightJoin("orders", new BaseWindowedBolt.Duration(1, TimeUnit.SECONDS), false)
+                .joinOn(adImpressionFields[1], orderFields[1])
+                .select("orders:id,ads:userId,ads:product,orders:product,price");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+
+        for (Tuple tuple : orderStream) {
+            bolt.execute(tuple);
+        }
+
+        // emit all ads but last one
+        for (int i = 0; i < adImpressionStream.size()-1; i++) {
+            bolt.execute( adImpressionStream.get(i) );
+        }
+
+        // sleep to allow expiration of all buffered orders and trigger an emit of unmatched orders on next execute()
+        Thread.sleep(1_100);
+        bolt.execute( adImpressionStream.get(adImpressionStream.size()-1) );
+
+        printResults(collector);
+        Assert.assertEquals( orderStream.size(), collector.actualResults.size() );
+    }
+
+
+    @Test
+    public void testSingleKey_OuterJoin() throws Exception {
+        ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
+        ArrayList<Tuple> adImpressionStream = makeStream("ads", adImpressionFields, adImpressions);
+
+        LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM)
+                .dataStream("ads")
+                .outerJoin("orders", new BaseWindowedBolt.Duration(1, TimeUnit.SECONDS), false)
+                .joinOn(adImpressionFields[1], orderFields[1])
+                .select("orders:id,ads:userId,ads:product,orders:product,price");
+
+        MockCollector collector = new MockCollector();
+        bolt.prepare(null, null, collector);
+
+        for (Tuple tuple : orderStream) {
+            bolt.execute(tuple);
+        }
+
+        // emit all ads but last one
+        for (int i = 0; i < adImpressionStream.size()-1; i++) {
+            bolt.execute( adImpressionStream.get(i) );
+        }
+
+        // sleep to allow expiration of all buffered orders and trigger an emit of unmatched orders on next execute()
+        Thread.sleep(1_100);
+        bolt.execute( adImpressionStream.get(adImpressionStream.size()-1) );
+
+        printResults(collector);
+        Assert.assertEquals( adImpressionStream.size()+2, collector.actualResults.size() );
+    }
+
+    @Test
+    public void testMultiKey_InnerJoin_CountRetention() throws Exception {
         ArrayList<Tuple> orderStream = makeStream("orders", orderFields, orders);
         ArrayList<Tuple> adImpressionStream = makeStream("ads", adImpressionFields, adImpressions);
 
         LookupJoinBolt bolt = new LookupJoinBolt(LookupJoinBolt.Selector.STREAM)
                 .dataStream("orders")
-                .lookupStream("ads", new BaseWindowedBolt.Duration(2, TimeUnit.SECONDS))
+                .innerJoin("ads", new BaseWindowedBolt.Count(10), false)
                 .joinOn(orderFields[1], adImpressionFields[1] )
-                .select("orders:id,ads:userId,product,price");
+                .joinOn(orderFields[2], adImpressionFields[2] )
+                .select("orders:id,ads:userId,ads:product,orders:product,price");
 
         MockCollector collector = new MockCollector();
         bolt.prepare(null, null, collector);
@@ -106,9 +224,8 @@ public class TestLookupJoin {
         }
 
         printResults(collector);
-        Assert.assertEquals( 5, collector.actualResults.size() );
+        Assert.assertEquals( 3, collector.actualResults.size() );
     }
-
 
     private static ArrayList<Tuple> makeStream(String streamName, String[] fieldNames, Object[][] data) {
         ArrayList<Tuple> result = new ArrayList<>();
@@ -143,6 +260,12 @@ public class TestLookupJoin {
 
         @Override
         public List<Integer> emit(Collection<Tuple> anchors, List<Object> tuple) {
+            actualResults.add(tuple);
+            return null;
+        }
+
+        @Override
+        public List<Integer> emit(Tuple anchor, List<Object> tuple) {
             actualResults.add(tuple);
             return null;
         }
