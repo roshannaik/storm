@@ -25,6 +25,7 @@ import java.util.Random;
 import java.util.Set;
 import org.apache.storm.daemon.Acker;
 import org.apache.storm.daemon.Task;
+import org.apache.storm.executor.ExecutorTransfer;
 import org.apache.storm.hooks.info.BoltAckInfo;
 import org.apache.storm.hooks.info.BoltFailInfo;
 import org.apache.storm.stats.BoltExecutorStats;
@@ -47,16 +48,20 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
     private final int taskId;
     private final Random random;
     private final boolean isEventLoggers;
+    private final ExecutorTransfer xsfer;
+    private boolean ackingEnabled;
     private final boolean isDebug;
 
     public BoltOutputCollectorImpl(BoltExecutor executor, Task taskData, int taskId, Random random,
-                                   boolean isEventLoggers, boolean isDebug) {
+                                   boolean isEventLoggers, boolean ackingEnabled, boolean isDebug) {
         this.executor = executor;
         this.taskData = taskData;
         this.taskId = taskId;
         this.random = random;
         this.isEventLoggers = isEventLoggers;
+        this.ackingEnabled = ackingEnabled;
         this.isDebug = isDebug;
+        this.xsfer = executor.getExecutorTransfer();
     }
 
     public List<Integer> emit(String streamId, Collection<Tuple> anchors, List<Object> tuple) {
@@ -77,8 +82,8 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
         }
 
         for (Integer t : outTasks) {
-            Map<Long, Long> anchorsToIds = new HashMap<>();
-            if (anchors != null) {
+            final Map<Long, Long> anchorsToIds = new HashMap<>();
+            if (ackingEnabled && anchors != null) {
                 for (Tuple a : anchors) {
                     Set<Long> rootIds = a.getMessageId().getAnchorsToIds().keySet();
                     if (rootIds.size() > 0) {
@@ -92,7 +97,8 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
             }
             MessageId msgId = MessageId.makeId(anchorsToIds);
             TupleImpl tupleExt = new TupleImpl(executor.getWorkerTopologyContext(), values, taskId, streamId, msgId);
-            executor.getExecutorTransfer().transfer(t, tupleExt);
+//            TupleImpl tupleExt = new TupleImpl(null, values, taskId, streamId, msgId);
+            xsfer.transfer(t, tupleExt);
         }
         if (isEventLoggers) {
             executor.sendToEventLogger(executor, taskData, values, executor.getComponentId(), null, random);
@@ -102,6 +108,8 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
 
     @Override
     public void ack(Tuple input) {
+        if(!ackingEnabled)
+            return;
         long ackValue = ((TupleImpl) input).getAckVal();
         Map<Long, Long> anchorsToIds = input.getMessageId().getAnchorsToIds();
         for (Map.Entry<Long, Long> entry : anchorsToIds.entrySet()) {

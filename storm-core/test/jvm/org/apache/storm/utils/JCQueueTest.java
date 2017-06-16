@@ -190,10 +190,10 @@ public class JCQueueTest extends TestCase {
     }
 
     private static JCQueue createQueue(String name, int queueSize) {
-        return new JCQueue(name, ProducerType.MULTI, queueSize, 0L, 1, 1L);
+        return new JCQueue(name, ProducerType.MULTI, queueSize, 0L, 1);
     }
 
     private static JCQueue createQueue(String name, int batchSize, int queueSize) {
-        return new JCQueue(name, ProducerType.MULTI, queueSize, 0L, batchSize, 1L);
+        return new JCQueue(name, ProducerType.MULTI, queueSize, 0L, batchSize);
     }
 }

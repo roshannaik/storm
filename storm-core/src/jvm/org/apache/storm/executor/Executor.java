@@ -109,6 +109,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     protected final Map<String, String> credentials;
     protected final Boolean isDebug;
     protected final Boolean hasEventLoggers;
+    protected final boolean ackingEnabled;
     protected String hostname;
 
     protected Executor(WorkerState workerData, List<Long> executorId, Map<String, String> credentials) {
@@ -160,6 +161,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         this.rand = new Random(Utils.secureRandomLong());
         this.credentials = credentials;
         this.hasEventLoggers = StormCommon.hasEventLoggers(stormConf);
+        this.ackingEnabled = StormCommon.hasAckers(stormConf);
 
         try {
             this.hostname = Utils.hostname();
@@ -351,8 +353,8 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
 
     protected void setupTicks(boolean isSpout) {
         final Integer tickTimeSecs = Utils.getInt(stormConf.get(Config.TOPOLOGY_TICK_TUPLE_FREQ_SECS), null);
-        boolean enableMessageTimeout = (Boolean) stormConf.get(Config.TOPOLOGY_ENABLE_MESSAGE_TIMEOUTS);
         if (tickTimeSecs != null) {
+            boolean enableMessageTimeout = (Boolean) stormConf.get(Config.TOPOLOGY_ENABLE_MESSAGE_TIMEOUTS);
             if (Utils.isSystemId(componentId) || (!enableMessageTimeout && isSpout)) {
                 LOG.info("Timeouts disabled for executor " + componentId + ":" + executorId);
             } else {

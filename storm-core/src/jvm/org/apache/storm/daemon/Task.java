@@ -124,18 +124,19 @@ public class Task {
         return new ArrayList<>(0);
     }
 
-    ArrayList<Integer> outTasks = new ArrayList<>();
 
+
+    // TODO: Roshan: cache the results for each 'stream' arg on first use, then reuse on subsequent calls
     public List<Integer> getOutgoingTasks(String stream, List<Object> values) {
         if (debug) {
             LOG.info("Emitting: {} {} {}", componentId, stream, values);
         }
 
-        outTasks.clear();
-//
-//        if (!streamComponentToGrouper.containsKey(stream)) {
-//            throw new IllegalArgumentException("Unknown stream ID: " + stream);
-//        }
+        ArrayList<Integer> outTasks = new ArrayList<>();
+        // TODO:  Roshan: this check may be expensive due to global sharing ?
+        if (!streamComponentToGrouper.containsKey(stream)) {
+            throw new IllegalArgumentException("Unknown stream ID: " + stream);
+        }
         Map<String, LoadAwareCustomStreamGrouping> streamGroupings = streamComponentToGrouper.get(stream);
         if (null != streamGroupings) {
             // null value for __system

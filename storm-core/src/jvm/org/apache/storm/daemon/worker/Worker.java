@@ -33,9 +33,12 @@ import java.util.stream.Collectors;
 
 import javax.security.auth.Subject;
 
+import com.google.common.collect.Lists;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.storm.Config;
+import org.apache.storm.Constants;
+import org.apache.storm.StormTimer;
 import org.apache.storm.cluster.ClusterStateContext;
 import org.apache.storm.cluster.ClusterUtils;
 import org.apache.storm.cluster.DaemonType;
@@ -58,6 +61,9 @@ import org.apache.storm.messaging.IContext;
 import org.apache.storm.security.auth.AuthUtils;
 import org.apache.storm.security.auth.IAutoCredentials;
 import org.apache.storm.stats.StatsUtil;
+import org.apache.storm.tuple.AddressedTuple;
+import org.apache.storm.tuple.TupleImpl;
+import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.LocalState;
 import org.apache.storm.utils.Time;
@@ -194,6 +200,9 @@ public class Worker implements Shutdownable, DaemonCommon {
                                 .execute());
                     }
                 }
+
+                setupFlushTuple(newExecutors);
+
                 executorsAtom.set(newExecutors);
 
                 JCQueue.Consumer tupleHandler = workerState;
@@ -236,7 +245,31 @@ public class Worker implements Shutdownable, DaemonCommon {
                 LOG.info("Worker has topology config {}", Utils.redactValue(topologyConf, Config.STORM_ZOOKEEPER_TOPOLOGY_AUTH_PAYLOAD));
                 LOG.info("Worker {} for storm {} on {}:{}  has finished loading", workerId, topologyId, assignmentId, port);
                 return this;
-            };
+            }
+
+            private void setupFlushTuple(final List<IRunningExecutor> newExecutors) {
+//                StormTimer timerTask = workerState.getUserTimer();
+                Integer batchSize = Utils.getInt(conf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
+                if(batchSize==1)
+                    return;
+//                final Long flushInterval = Utils.getLong( conf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS) );
+//                timerTask.scheduleRecurring(flushInterval, flushInterval, new Runnable() {
+//                    @Override
+//                    public void run() {
+//                        TupleImpl tuple = new TupleImpl(context, new Values(flushInterval),
+//                                (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_FLUSH_STREAM_ID);
+//                        List<AddressedTuple> tickTuple =
+//                                Lists.newArrayList(new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple));
+//                        for (IRunningExecutor executor : newExecutors) {
+//                            executor.
+//                        }
+//                        receiveQueue.publish(tickTuple);
+//                    }
+//                });
+                return;
+            }
+
+            ;
         });
 
     }

@@ -79,12 +79,18 @@ public class ConstSpoutIdBoltNullBoltTopo {
         if (args.length <= 0) {
             // submit to local cluster
             Config conf = new Config();
-            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf));
+            conf.setNumAckers(0);
+            LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf), conf);
 
-            Helper.setupShutdownHook(cluster, TOPOLOGY_NAME);
-            while (true) {//  run indefinitely till Ctrl-C
-                Thread.sleep(20_000_000);
-            }
+//            Helper.setupShutdownHook(cluster, TOPOLOGY_NAME);
+//            while (true) {//  run indefinitely till Ctrl-C
+                Thread.sleep(10_000);
+//            }
+            System.err.println("Killing...");
+            cluster.killTopology(TOPOLOGY_NAME);
+            System.err.println("Done killing");
+            while (true)
+                Thread.sleep(1000);
         } else {
             // submit to real cluster
             if (args.length >2) {

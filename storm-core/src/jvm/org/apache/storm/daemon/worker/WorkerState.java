@@ -249,8 +249,7 @@ public class WorkerState implements JCQueue.Consumer {
         this.transferQueue = new JCQueue("worker-transfer-queue",
             Utils.getInt(topologyConf.get(Config.TOPOLOGY_TRANSFER_BUFFER_SIZE)),
             (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
-            1,
-            (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS));
+            1);
 
         this.conf = conf;
         this.mqContext = (null != mqContext) ? mqContext : TransportFactory.makeContext(topologyConf);
@@ -627,11 +626,11 @@ public class WorkerState implements JCQueue.Consumer {
     private Map<List<Long>, JCQueue> mkReceiveQueueMap(Map topologyConf, Set<List<Long>> executors) {
         Map<List<Long>, JCQueue> receiveQueueMap = new HashMap<>();
         for (List<Long> executor : executors) {
-            receiveQueueMap.put(executor, new JCQueue("receive-queue",
+            receiveQueueMap.put(executor, new JCQueue("receive-queue" + executor.toString(),
                 Utils.getInt(topologyConf.get(Config.TOPOLOGY_EXECUTOR_RECEIVE_BUFFER_SIZE)),
                 (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
-                1,  // it receives arrays of tuples so we disable batching (to avoid double batching)
-                (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS)));
+                1 )); // it receives arrays of tuples so we disable batching (to avoid double batching)
+
         }
         return receiveQueueMap;
     }

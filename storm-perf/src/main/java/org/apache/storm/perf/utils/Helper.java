@@ -96,6 +96,7 @@ public class Helper {
     Runtime.getRuntime().addShutdownHook(new Thread() {
       public void run() {
           try {
+              System.out.println("Killing...");
               cluster.killTopology(topoName);
               System.out.println("Killed Topology");
           } catch (Exception e) {

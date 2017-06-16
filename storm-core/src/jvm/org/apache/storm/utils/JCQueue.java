@@ -18,9 +18,10 @@
 
 package org.apache.storm.utils;
 
-// TODO : publish is blocking(), either we need a timeout on it. or need to figure out if timeouts are needed for stopping.
+// TODO: publish is blocking(), either we need a timeout on it. or need to figure out if timeouts are needed for stopping.
 // TODO: Remove return 1L in Worker.java
 // TODO: Add metric to count how often consumeBatch consume nothing
+// TODO: shutdown takes longer (in IDE) due to ZK connection termination
 
 import com.lmax.disruptor.dsl.ProducerType;
 import org.apache.storm.metric.api.IStatefulObject;
@@ -42,17 +43,17 @@ public class JCQueue implements IStatefulObject {
 
     private static final Logger LOG = LoggerFactory.getLogger(JCQueue.class);
     private static final Object INTERRUPT = new Object();
-    private static final String PREFIX = "disruptor-";
+//    private static final String PREFIX = "events-";
     private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 5_000_000);
 
-    private interface ThreadLocalInserter {
+    private interface Inserter {
         // blocking call that can be interrupted with Thread.interrupt()
         void add(Object obj) throws InterruptedException ;
     }
 
-    private class ThreadLocalJustInserter implements JCQueue.ThreadLocalInserter {
+    private class DirectInserter implements Inserter {
 
-        public ThreadLocalJustInserter() {
+        public DirectInserter() {
         }
 
         /** Blocking call, that can be interrupted via Thread.interrupt */
@@ -67,14 +68,15 @@ public class JCQueue implements IStatefulObject {
     }
 
     private void sleep(int millis, int nanos) throws InterruptedException {
+//        Thread.yield();
         Thread.sleep(millis,nanos);
     }
 
-    private class ThreadLocalBatcher implements ThreadLocalInserter {
+    private class BatchInserter implements Inserter {
         private ArrayList<Object> _currentBatch;
         private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 100_000_000);
 
-        public ThreadLocalBatcher() {
+        public BatchInserter() {
             _currentBatch = new ArrayList<>(_inputBatchSize);
         }
 
@@ -87,23 +89,20 @@ public class JCQueue implements IStatefulObject {
             }
         }
 
-        // Does not return till completely flushed or Thread.interrupt() received
+        // Does not return till at least 1 element is drained or Thread.interrupt() is received
         private void flush( ) throws InterruptedException {
             int publishCount = publishDirect(_currentBatch);
-            _currentBatch.subList(0, publishCount).clear();
-            while (!_currentBatch.isEmpty()) { // retry
-                if(Thread.currentThread().isInterrupted())
+            while (publishCount==0) { // retry till at least 1 element is drained
+                fullMeter.record();
+                if (Thread.currentThread().isInterrupted())
                     return;
-                sleep(1000,0);
+                sleep(1000, 0);
                 publishCount = publishDirect(_currentBatch);
-                if (publishCount==0)
-                    fullMeter.record();
-                else
-                    _currentBatch.subList(0, publishCount).clear();
             }
+            _currentBatch.subList(0, publishCount).clear();
         }
 
-    } // class ThreadLocalBatcher
+    } // class BatchInserter
 
     /**
      * This inner class provides methods to access the metrics of the disruptor queue.
@@ -179,7 +178,7 @@ public class JCQueue implements IStatefulObject {
     private final ConcurrentCircularArrayQueue<Object> _buffer;
 
     private final int _inputBatchSize;
-    private final ConcurrentHashMap<Long, JCQueue.ThreadLocalInserter> _batchers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Inserter> _batchers = new ConcurrentHashMap<>();
     private final JCQueue.QueueMetrics _metrics;
 
     private String _queueName = "";
@@ -189,16 +188,16 @@ public class JCQueue implements IStatefulObject {
 
 //    private final AtomicLong _overflowCount = new AtomicLong(0);
 
-    public JCQueue(String queueName, ProducerType type, int size, long readTimeout, int inputBatchSize, long flushInterval) {
-        this(queueName, type==ProducerType.SINGLE ? ProducerKind.SINGLE : ProducerKind.MULTI, size, readTimeout, inputBatchSize, flushInterval);
+    public JCQueue(String queueName, ProducerType type, int size, long readTimeout, int inputBatchSize) {
+        this(queueName, type==ProducerType.SINGLE ? ProducerKind.SINGLE : ProducerKind.MULTI, size, readTimeout, inputBatchSize);
     }
 
-    public JCQueue(String queueName,  int size, long readTimeout, int inputBatchSize, long flushInterval) {
-        this(queueName, ProducerType.MULTI, size, readTimeout, inputBatchSize, flushInterval);
+    public JCQueue(String queueName,  int size, long readTimeout, int inputBatchSize) {
+        this(queueName, ProducerType.MULTI, size, readTimeout, inputBatchSize);
     }
 
-    public JCQueue(String queueName, ProducerKind type, int size, long readTimeout, int inputBatchSize, long flushInterval) {
-        this._queueName = PREFIX + queueName;
+    public JCQueue(String queueName, ProducerKind type, int size, long readTimeout, int inputBatchSize) {
+        this._queueName = queueName;
         _readTimeout = readTimeout;
 
         if (type == ProducerKind.SINGLE)
@@ -288,12 +287,12 @@ public class JCQueue implements IStatefulObject {
     /** Blocking call, that can be interrupted via Thread.interrupt() */
     public void publish(Object obj) {
         Long id = getId();
-        JCQueue.ThreadLocalInserter batcher = _batchers.get(id);
+        Inserter batcher = _batchers.get(id);
         if (batcher == null) {
             if (_inputBatchSize > 1) {
-                batcher = new ThreadLocalBatcher();
+                batcher = new BatchInserter();
             } else {
-                batcher = new ThreadLocalJustInserter();
+                batcher = new DirectInserter();
             }
             //This publisher thread is the only one ever creating a batcher for this thd id, so this is safe
             _batchers.put(id, batcher);

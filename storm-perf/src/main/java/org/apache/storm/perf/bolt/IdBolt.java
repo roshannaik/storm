@@ -42,6 +42,7 @@ public class IdBolt extends BaseRichBolt {
     @Override
     public void execute(Tuple tuple) {
         collector.emit(tuple, new Values( tuple.getValues() ) );
+//        collector.emit( new Values( tuple.getValues() ) );
         collector.ack(tuple);
         meter.record();
     }

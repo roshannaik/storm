@@ -70,7 +70,8 @@ public class DevNullBolt extends BaseRichBolt {
     @Override
     public void cleanup() {
         super.cleanup();
-        LOG.error(" =====> %,d k/s ", meter.stop()/1000);
+        if (meter!=null)
+            LOG.error(" =====> %,d k/s ", meter.stop()/1000);
 
     }
 }

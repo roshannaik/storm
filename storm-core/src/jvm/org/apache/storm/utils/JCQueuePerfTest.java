@@ -20,12 +20,12 @@ package org.apache.storm.utils;
 
 import java.util.concurrent.locks.LockSupport;
 
-public class TestJCQueue {
+public class JCQueuePerfTest {
 
     public static void main(String[] args) throws Exception {
-//        oneProducer1Consumer();
+        oneProducer1Consumer();
 //        oneProducer2Consumers();
-        producerFwdConsumer();
+//        producerFwdConsumer();
 
 //        JCQueue spoutQ = new JCQueue("spoutQ", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
 //        JCQueue ackQ = new JCQueue("ackQ", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
@@ -41,8 +41,8 @@ public class TestJCQueue {
     }
 
     private static void producerFwdConsumer() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
-        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
+        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
 
         final Producer prod = new Producer(q1);
         final Forwarder fwd = new Forwarder(q1,q2);
@@ -53,7 +53,7 @@ public class TestJCQueue {
 
 
     private static void oneProducer1Consumer() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
 
         final Producer prod1 = new Producer(q1);
         final Consumer cons1 = new Consumer(q1);
@@ -62,8 +62,8 @@ public class TestJCQueue {
     }
 
     private static void oneProducer2Consumers() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
-        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
+        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
 
         final Producer2 prod1 = new Producer2(q1,q2);
         final Consumer cons1 = new Consumer(q1);
@@ -179,7 +179,7 @@ class AckingProducer extends MyThread {
         Handler handler = new Handler();
         long start = System.currentTimeMillis();
         while (!Thread.interrupted()) {
-            int x = spoutInQ.consumeBatch(handler);
+            int x = spoutInQ.consumeBatchWhenAvailable(handler);
             ackerInQ.publish(count);
         }
         runTime = System.currentTimeMillis() - start;
@@ -214,7 +214,7 @@ class Acker extends MyThread {
         long start = System.currentTimeMillis();
         Handler handler = new Handler();
         while (!Thread.interrupted()) {
-            ackerInQ.consumeBatch(handler);
+            ackerInQ.consumeBatchWhenAvailable(handler);
         }
         runTime = System.currentTimeMillis() - start;
     }
@@ -257,7 +257,7 @@ class Consumer extends MyThread {
         Handler handler = new Handler();
         long start = System.currentTimeMillis();
         while(!Thread.interrupted()) {
-            int x = q.consumeBatch(handler);
+            int x = q.consumeBatchWhenAvailable(handler);
             if(x==0)
                 LockSupport.parkNanos(1);
         }
@@ -299,7 +299,7 @@ class Forwarder extends MyThread {
         Handler handler = new Handler();
         long start = System.currentTimeMillis();
         while(!Thread.interrupted()) {
-            int x = inq.consumeBatch(handler);
+            int x = inq.consumeBatchWhenAvailable(handler);
             if(x==0)
                 LockSupport.parkNanos(1);
         }

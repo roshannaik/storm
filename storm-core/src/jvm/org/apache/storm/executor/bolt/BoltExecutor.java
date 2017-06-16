@@ -79,7 +79,7 @@ public class BoltExecutor extends Executor {
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
             }
 
-            IOutputCollector outputCollector = new BoltOutputCollectorImpl(this, taskData, entry.getKey(), rand, hasEventLoggers, isDebug);
+            IOutputCollector outputCollector = new BoltOutputCollectorImpl(this, taskData, entry.getKey(), rand, hasEventLoggers, ackingEnabled, isDebug);
             boltObject.prepare(stormConf, userContext, new OutputCollector(outputCollector));
         }
         openOrPrepareWasCalled.set(true);
@@ -96,7 +96,7 @@ public class BoltExecutor extends Executor {
             RunningStat avgConsumeCount = new RunningStat("BOLT Avg consume count", 2_000_000);
             @Override
             public Object call() throws Exception {
-                long start = System.currentTimeMillis();
+//                long start = System.currentTimeMillis();
                 int count = receiveQueue.consumeBatchWhenAvailable(BoltExecutor.this);
                 long parkTimeNanoSec = isSystemBoltExecutor ? 50_000_000 : 1;
                 if(count==0)

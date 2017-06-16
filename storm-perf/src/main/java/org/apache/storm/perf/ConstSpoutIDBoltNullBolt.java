@@ -35,7 +35,6 @@ public class ConstSpoutIDBoltNullBolt {
     public static final String TOPOLOGY_NAME = "ConstSpoutIDBoltNullBoltTopo";
     public static final String SPOUT_ID = "constSpout";
     public static final String BOLT1_ID = "idBolt";
-    public static final String BOLT1b_ID = "idBolt2";
     public static final String BOLT2_ID = "nullBolt";
 
     public static final String BOLT1_COUNT = "bolt1.count";
@@ -49,7 +48,6 @@ public class ConstSpoutIDBoltNullBolt {
 
         // 2 -  Setup IdBolt 7 DevNullBolt   --------
         IdBolt bolt1 = new IdBolt();
-        IdBolt bolt1b = new IdBolt();
 
         DevNullBolt bolt2 = new DevNullBolt(printFreq);
 
@@ -57,9 +55,9 @@ public class ConstSpoutIDBoltNullBolt {
         // 3 - Setup Topology  --------
         TopologyBuilder builder = new TopologyBuilder();
 
-        builder.setSpout(SPOUT_ID, spout, 1 );
+        builder.setSpout(SPOUT_ID, spout, Helper.getInt(conf, SPOUT_COUNT, 1) );
 
-        builder.setBolt(BOLT1_ID, bolt1, 1)
+        builder.setBolt(BOLT1_ID, bolt1, Helper.getInt(conf, BOLT1_COUNT, 1))
                 .localOrShuffleGrouping(SPOUT_ID);
 
         builder.setBolt(BOLT2_ID, bolt2, Helper.getInt(conf, BOLT2_COUNT, 1))
