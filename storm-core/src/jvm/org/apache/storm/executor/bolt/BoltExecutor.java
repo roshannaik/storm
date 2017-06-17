@@ -97,7 +97,7 @@ public class BoltExecutor extends Executor {
             @Override
             public Object call() throws Exception {
 //                long start = System.currentTimeMillis();
-                int count = receiveQueue.consumeBatchWhenAvailable(BoltExecutor.this);
+                int count = receiveQueue.consume(BoltExecutor.this);
                 long parkTimeNanoSec = isSystemBoltExecutor ? 50_000_000 : 1;
                 if(count==0)
                     LockSupport.parkNanos(parkTimeNanoSec);

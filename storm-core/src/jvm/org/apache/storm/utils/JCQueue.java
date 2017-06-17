@@ -43,7 +43,7 @@ public class JCQueue implements IStatefulObject {
 
     private static final Logger LOG = LoggerFactory.getLogger(JCQueue.class);
     private static final Object INTERRUPT = new Object();
-//    private static final String PREFIX = "events-";
+
     private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 5_000_000);
 
     private interface Inserter {
@@ -68,13 +68,13 @@ public class JCQueue implements IStatefulObject {
     }
 
     private void sleep(int millis, int nanos) throws InterruptedException {
-//        Thread.yield();
-        Thread.sleep(millis,nanos);
+        Thread.yield();
+//        Thread.sleep(millis,nanos);
     }
 
     private class BatchInserter implements Inserter {
         private ArrayList<Object> _currentBatch;
-        private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 100_000_000);
+        private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 10_000_000);
 
         public BatchInserter() {
             _currentBatch = new ArrayList<>(_inputBatchSize);
@@ -227,16 +227,16 @@ public class JCQueue implements IStatefulObject {
         }
     }
 
-    public int consumeBatchWhenAvailable(JCQueue.Consumer handler) {
+    public int consume(JCQueue.Consumer consumer) {
         try {
-            return consumeBatchToCursor(handler);
+            return consumerImpl(consumer);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
 
 
-    private int consumeBatchToCursor(Consumer consumer) throws InterruptedException {
+    private int consumerImpl(Consumer consumer) throws InterruptedException {
         int count = _buffer.drain(
                 obj -> {
                     try {
@@ -252,6 +252,8 @@ public class JCQueue implements IStatefulObject {
         _metrics.notifyDrain(count);
         if(count==0)
             emptyMeter.record();
+//        else
+//            System.err.println("yay");
         return count;
     }
 

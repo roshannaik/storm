@@ -33,12 +33,9 @@ import java.util.stream.Collectors;
 
 import javax.security.auth.Subject;
 
-import com.google.common.collect.Lists;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.ObjectUtils;
 import org.apache.storm.Config;
-import org.apache.storm.Constants;
-import org.apache.storm.StormTimer;
 import org.apache.storm.cluster.ClusterStateContext;
 import org.apache.storm.cluster.ClusterUtils;
 import org.apache.storm.cluster.DaemonType;
@@ -61,9 +58,6 @@ import org.apache.storm.messaging.IContext;
 import org.apache.storm.security.auth.AuthUtils;
 import org.apache.storm.security.auth.IAutoCredentials;
 import org.apache.storm.stats.StatsUtil;
-import org.apache.storm.tuple.AddressedTuple;
-import org.apache.storm.tuple.TupleImpl;
-import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.LocalState;
 import org.apache.storm.utils.Time;
@@ -209,11 +203,12 @@ public class Worker implements Shutdownable, DaemonCommon {
 
                 // This thread will publish the messages destined for remote tasks to remote connections
                 transferThread = Utils.asyncLoop(() -> {
-                    int x = workerState.transferQueue.consumeBatchWhenAvailable(tupleHandler);
+                    int x = workerState.transferQueue.consume(tupleHandler);
                     if(x==0)
                         return 1L;
                     return 0L;
                 });
+                transferThread.setName("Worker-Transfer");
 
                 credentialsAtom = new AtomicReference<Credentials>(initialCredentials);
 

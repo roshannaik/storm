@@ -179,7 +179,7 @@ class AckingProducer extends MyThread {
         Handler handler = new Handler();
         long start = System.currentTimeMillis();
         while (!Thread.interrupted()) {
-            int x = spoutInQ.consumeBatchWhenAvailable(handler);
+            int x = spoutInQ.consume(handler);
             ackerInQ.publish(count);
         }
         runTime = System.currentTimeMillis() - start;
@@ -214,7 +214,7 @@ class Acker extends MyThread {
         long start = System.currentTimeMillis();
         Handler handler = new Handler();
         while (!Thread.interrupted()) {
-            ackerInQ.consumeBatchWhenAvailable(handler);
+            ackerInQ.consume(handler);
         }
         runTime = System.currentTimeMillis() - start;
     }
@@ -257,7 +257,7 @@ class Consumer extends MyThread {
         Handler handler = new Handler();
         long start = System.currentTimeMillis();
         while(!Thread.interrupted()) {
-            int x = q.consumeBatchWhenAvailable(handler);
+            int x = q.consume(handler);
             if(x==0)
                 LockSupport.parkNanos(1);
         }
@@ -299,7 +299,7 @@ class Forwarder extends MyThread {
         Handler handler = new Handler();
         long start = System.currentTimeMillis();
         while(!Thread.interrupted()) {
-            int x = inq.consumeBatchWhenAvailable(handler);
+            int x = inq.consume(handler);
             if(x==0)
                 LockSupport.parkNanos(1);
         }

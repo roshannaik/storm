@@ -64,7 +64,7 @@ public class ExecutorShutdown implements Shutdownable, IRunningExecutor {
     public void credentialsChanged(Credentials credentials) {
         TupleImpl tuple = new TupleImpl(executor.getWorkerTopologyContext(), new Values(credentials), (int) Constants.SYSTEM_TASK_ID,
                 Constants.CREDENTIALS_CHANGED_STREAM_ID);
-        List<AddressedTuple> addressedTuple = Lists.newArrayList(new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple));
+        AddressedTuple addressedTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
         executor.getReceiveQueue().publish(addressedTuple);
     }
 

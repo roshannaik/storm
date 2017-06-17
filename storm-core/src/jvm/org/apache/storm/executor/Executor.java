@@ -254,19 +254,18 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
 
     @Override
     public void accept(Object event) throws Exception {
-        ArrayList<AddressedTuple> addressedTuples = (ArrayList<AddressedTuple>) event;
-        for (AddressedTuple addressedTuple : addressedTuples) {
-            TupleImpl tuple = (TupleImpl) addressedTuple.getTuple();
-            int taskId = addressedTuple.getDest();
-            if (isDebug) {
-                LOG.info("Processing received message FOR {} TUPLE: {}", taskId, tuple);
-            }
-            if (taskId != AddressedTuple.BROADCAST_DEST) {
-                tupleActionFn(taskId, tuple);
-            } else {
-                for (Integer t : taskIds) {
-                    tupleActionFn(t, tuple);
-                }
+        AddressedTuple addressedTuple =  (AddressedTuple)event;
+        int taskId = addressedTuple.getDest();
+
+        TupleImpl tuple = (TupleImpl) addressedTuple.getTuple();
+        if (isDebug) {
+            LOG.info("Processing received message FOR {} TUPLE: {}", taskId, tuple);
+        }
+        if (taskId != AddressedTuple.BROADCAST_DEST) {
+            tupleActionFn(taskId, tuple);
+        } else {
+            for (Integer t : taskIds) {
+                tupleActionFn(t, tuple);
             }
         }
     }
@@ -316,8 +315,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
                 public void run() {
                     TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(interval),
                             (int) Constants.SYSTEM_TASK_ID, Constants.METRICS_TICK_STREAM_ID);
-                    List<AddressedTuple> metricsTickTuple =
-                            Lists.newArrayList(new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple));
+                    AddressedTuple metricsTickTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
                     receiveQueue.publish(metricsTickTuple);
                 }
             });
@@ -364,8 +362,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
                     public void run() {
                         TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(tickTimeSecs),
                                 (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_TICK_STREAM_ID);
-                        List<AddressedTuple> tickTuple =
-                                Lists.newArrayList(new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple));
+                        AddressedTuple tickTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
                         receiveQueue.publish(tickTuple);
                     }
                 });

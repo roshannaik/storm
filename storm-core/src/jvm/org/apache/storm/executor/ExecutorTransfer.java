@@ -23,11 +23,11 @@ import org.apache.storm.messaging.TaskMessage;
 import org.apache.storm.serialization.KryoTupleSerializer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Tuple;
-import org.apache.storm.utils.JCQueue;
 import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,14 +35,13 @@ import java.util.Map;
 public class ExecutorTransfer  {
     private static final Logger LOG = LoggerFactory.getLogger(ExecutorTransfer.class);
 
-    private final WorkerState workerData;
-    private final Map stormConf;
+    private final WorkerState workerData; // TODO: Roshan: consider having a local copy of relevant info ? and update it when it changes
+    private final Map stormConf; // TODO: Roshan: Remove this field ?
     private final KryoTupleSerializer serializer;
     private final boolean isDebug;
     private final int producerBatchSz;
     private int currBatchSz = 0;
 
-    HashMap<Integer, List<AddressedTuple>> localMap = new HashMap<>();
     HashMap<Integer, List<TaskMessage>> remoteMap  = new HashMap<>();
 
     public ExecutorTransfer(WorkerState workerData, Map stormConf) {
@@ -58,11 +57,16 @@ public class ExecutorTransfer  {
         if (isDebug) {
             LOG.info("TRANSFERRING tuple {}", addressedTuple);
         }
-        classifyAsLocalOrRemote(addressedTuple);
-        ++currBatchSz;
-        if(currBatchSz>=producerBatchSz) {
-            flush(); // TODO: Roshan: flush needs to be called on timeout also
-            currBatchSz=0;
+
+        if( workerData.isGoingToLocalWorker(serializer, addressedTuple) ) {
+            workerData.transferLocal(addressedTuple);
+        } else {
+            cacheRemoteTuples(serializer, addressedTuple, remoteMap);
+            ++currBatchSz;
+            if(currBatchSz>=producerBatchSz) {
+                flushRemotes(); // TODO: Roshan: flush needs to be called on timeout also
+                currBatchSz=0;
+            }
         }
     }
 
@@ -70,20 +74,21 @@ public class ExecutorTransfer  {
         return "No Queue here";
     }
 
-    // buffers the tuple into local or remote maps
-    public void classifyAsLocalOrRemote(AddressedTuple tuple)  {
-        workerData.classifyLocalOrRemote(serializer, tuple, localMap, remoteMap);
+
+    private static void cacheRemoteTuples(KryoTupleSerializer serializer, AddressedTuple tuple, Map<Integer, List<TaskMessage>> remoteMap) {
+        int destTask = tuple.dest;
+        if (! remoteMap.containsKey(destTask)) {
+            remoteMap.put(destTask, new ArrayList<>());
+        }
+        remoteMap.get(destTask).add(new TaskMessage(destTask, serializer.serialize(tuple.getTuple())));
     }
 
+
     // flushes local and remote maps
-    public void flush() {
-        if (!localMap.isEmpty()) {
-            workerData.transferLocal(localMap);
-        }
+    public void flushRemotes() {
         if (!remoteMap.isEmpty()) {
             workerData.transferRemote(remoteMap);
         }
-        localMap.clear();
         remoteMap.clear();
     }
 

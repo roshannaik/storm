@@ -20,7 +20,6 @@ package org.apache.storm.utils;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.dsl.ProducerType;
 import org.junit.Assert;
 import org.junit.Test;
@@ -181,7 +180,7 @@ public class JCQueueTest extends TestCase {
         public void run() {
             try {
                 while(true) {
-                    queue.consumeBatchWhenAvailable(handler);
+                    queue.consume(handler);
                 }
             } catch(RuntimeException e) {
                 //break

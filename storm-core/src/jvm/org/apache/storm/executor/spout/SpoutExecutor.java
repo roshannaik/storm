@@ -132,7 +132,7 @@ public class SpoutExecutor extends Executor {
             public Object call() throws Exception {
                 long start = System.currentTimeMillis();
                 if( i==0 ) {
-                   int x = receiveQueue.consumeBatchWhenAvailable(SpoutExecutor.this);
+                   int x = receiveQueue.consume(SpoutExecutor.this);
                     spoutConsCount.push(x);
                 }
                 if(++i==8) i=0;

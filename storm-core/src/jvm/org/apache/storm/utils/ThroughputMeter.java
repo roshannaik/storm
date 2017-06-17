@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 public class ThroughputMeter {
 
     private String name;
+    private long history=0;
     private long startTime = 0;
     private int count;
     private long endTime = 0;
@@ -46,6 +47,7 @@ public class ThroughputMeter {
 
     public void record() {
         ++count;
+        ++history;
         if(++times==printFreq) {
             times=0;
             printCurrentThroughput();
