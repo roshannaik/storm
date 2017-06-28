@@ -100,9 +100,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
 
     protected final IReportError reportError;
     protected final Random rand;
-//    protected final DisruptorQueue transferQueue;
-//    protected final DisruptorQueue receiveQueue;
-//    protected final JCQueue transferQueue;
     protected final JCQueue receiveQueue;
 
     protected Map<Integer, Task> idToTask;
@@ -127,7 +124,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         this.stormActive = workerData.getIsTopologyActive();
         this.stormComponentDebug = workerData.getStormComponentToDebug();
 
-//        this.transferQueue = mkExecutorBatchQueue(stormConf, executorId);
         this.executorTransfer = new ExecutorTransfer(workerData, stormConf);
 
         this.suicideFn = workerData.getSuicideCallback();
@@ -190,8 +186,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         for (Integer taskId : taskIds) {
             try {
                 Task task = new Task(executor, taskId);
-                executor.sendUnanchored(
-                        task, StormCommon.SYSTEM_STREAM_ID, new Values("startup"), executor.getExecutorTransfer());
+                task.sendUnanchored( StormCommon.SYSTEM_STREAM_ID, new Values("startup"), executor.getExecutorTransfer());
                 idToTask.put(taskId, task);
             } catch (IOException ex) {
                 throw Utils.wrapInRuntime(ex);
@@ -222,35 +217,16 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         LOG.info("Loading executor tasks " + componentId + ":" + executorId);
 
         String handlerName = componentId + "-executor" + executorId;
-        Utils.SmartThread handlers =
+        Utils.SmartThread handler =
                 Utils.asyncLoop(this, false, reportErrorDie, Thread.NORM_PRIORITY, true, true, handlerName);
         setupTicks(StatsUtil.SPOUT.equals(type));
+        setupFlushTuples();
 
         LOG.info("Finished loading executor " + componentId + ":" + executorId);
-        return new ExecutorShutdown(this, Lists.newArrayList(handlers), idToTask);
+        return new ExecutorShutdown(this, Lists.newArrayList(handler), idToTask);
     }
 
     public abstract void tupleActionFn(int taskId, TupleImpl tuple) throws Exception;
-
-//    @SuppressWarnings("unchecked")
-//    @Override
-//    public void onEvent(Object event, long seq, boolean endOfBatch) throws Exception {
-//        ArrayList<AddressedTuple> addressedTuples = (ArrayList<AddressedTuple>) event;
-//        for (AddressedTuple addressedTuple : addressedTuples) {
-//            TupleImpl tuple = (TupleImpl) addressedTuple.getTuple();
-//            int taskId = addressedTuple.getDest();
-//            if (isDebug) {
-//                LOG.info("Processing received message FOR {} TUPLE: {}", taskId, tuple);
-//            }
-//            if (taskId != AddressedTuple.BROADCAST_DEST) {
-//                tupleActionFn(taskId, tuple);
-//            } else {
-//                for (Integer t : taskIds) {
-//                    tupleActionFn(t, tuple);
-//                }
-//            }
-//        }
-//    }
 
     @Override
     public void accept(Object event) throws Exception {
@@ -275,10 +251,10 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         // NO-OP
     }
 
-    public void metricsTick(Task taskData, TupleImpl tuple) {
+    public void metricsTick(Task task, TupleImpl tuple) {
         try {
             Integer interval = tuple.getInteger(0);
-            int taskId = taskData.getTaskId();
+            int taskId = task.getTaskId();
             Map<Integer, Map<String, IMetric>> taskToMetricToRegistry = intervalToTaskToMetricToRegistry.get(interval);
             Map<String, IMetric> nameToRegistry = null;
             if (taskToMetricToRegistry != null) {
@@ -298,8 +274,9 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
                     }
                 }
                 if (!dataPoints.isEmpty()) {
-                    sendUnanchored(taskData, Constants.METRICS_STREAM_ID,
+                    task.sendUnanchored(Constants.METRICS_STREAM_ID,
                             new Values(taskInfo, dataPoints), executorTransfer);
+                    executorTransfer.flush();
                 }
             }
         } catch (Exception e) {
@@ -316,38 +293,18 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
                     TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(interval),
                             (int) Constants.SYSTEM_TASK_ID, Constants.METRICS_TICK_STREAM_ID);
                     AddressedTuple metricsTickTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
-                    receiveQueue.publish(metricsTickTuple);
+                    try {
+                        receiveQueue.publish(metricsTickTuple);
+                        receiveQueue.flush();  // flush immediately to avoid buffering
+                    } catch (InterruptedException e) {
+                        LOG.warn("Thread interrupted when publishing metrics. Setting interrupt flag.");
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
                 }
             });
         }
     }
-
-    public void sendUnanchored(Task task, String stream, List<Object> values, ExecutorTransfer transfer) {
-        Tuple tuple = task.getTuple(stream, values);
-        List<Integer> tasks = task.getOutgoingTasks(stream, values);
-        for (Integer t : tasks) {
-            transfer.transfer(t, tuple);
-        }
-    }
-
-    /**
-     * Send sampled data to the eventlogger if the global or component level debug flag is set (via nimbus api).
-     */
-    public void sendToEventLogger(Executor executor, Task taskData, List values,
-                                  String componentId, Object messageId, Random random) {
-        Map<String, DebugOptions> componentDebug = executor.getStormComponentDebug().get();
-        DebugOptions debugOptions = componentDebug.get(componentId);
-        if (debugOptions == null) {
-            debugOptions = componentDebug.get(executor.getStormId());
-        }
-        double spct = ((debugOptions != null) && (debugOptions.is_enable())) ? debugOptions.get_samplingpct() : 0;
-        if (spct > 0 && (random.nextDouble() * 100) < spct) {
-            sendUnanchored(taskData, StormCommon.EVENTLOGGER_STREAM_ID,
-                    new Values(componentId, messageId, System.currentTimeMillis(), values),
-                    executor.getExecutorTransfer());
-        }
-    }
-
 
     protected void setupTicks(boolean isSpout) {
         final Integer tickTimeSecs = Utils.getInt(stormConf.get(Config.TOPOLOGY_TICK_TUPLE_FREQ_SECS), null);
@@ -363,10 +320,40 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
                         TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(tickTimeSecs),
                                 (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_TICK_STREAM_ID);
                         AddressedTuple tickTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
-                        receiveQueue.publish(tickTuple);
+                        try {
+                            receiveQueue.publish(tickTuple);
+                            receiveQueue.flush();
+                        } catch (InterruptedException e) {
+                            LOG.warn("Thread interrupted when emitting tick tuple. Setting interrupt flag.");
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
                     }
                 });
             }
+        }
+    }
+
+    protected void setupFlushTuples() {
+        final Integer flushIntervalMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_FLUSH_TUPLE_FREQ_MILLIS) );
+        final Integer batchSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE) );
+        if ( flushIntervalMs != 0 && batchSize>1) {
+            StormTimer timerTask = workerData.getUserTimer();
+            timerTask.scheduleRecurringMs(flushIntervalMs, flushIntervalMs, new Runnable() {
+                @Override
+                public void run() {
+                    TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(),
+                            (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_FLUSH_STREAM_ID);
+                    AddressedTuple flushTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
+                     if( receiveQueue.tryPublish(flushTuple) )
+                         LOG.debug("-- Published Flush tuple to: {} ", receiveQueue.getName());
+                     else
+                         LOG.debug("-- Q is currently full, will retry later. Unable to publish Flush tuple to Q: {} ", receiveQueue.getName());
+
+                }
+            });
+        } else {
+            LOG.info("Flush tuples disabled for executor " + componentId + ":" + executorId);
         }
     }
 

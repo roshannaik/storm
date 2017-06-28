@@ -18,6 +18,7 @@
 package org.apache.storm.executor.bolt;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +45,7 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
     private static final Logger LOG = LoggerFactory.getLogger(BoltOutputCollectorImpl.class);
 
     private final BoltExecutor executor;
-    private final Task taskData;
+    private final Task task;
     private final int taskId;
     private final Random random;
     private final boolean isEventLoggers;
@@ -55,7 +56,7 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
     public BoltOutputCollectorImpl(BoltExecutor executor, Task taskData, int taskId, Random random,
                                    boolean isEventLoggers, boolean ackingEnabled, boolean isDebug) {
         this.executor = executor;
-        this.taskData = taskData;
+        this.task = taskData;
         this.taskId = taskId;
         this.random = random;
         this.isEventLoggers = isEventLoggers;
@@ -65,20 +66,32 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
     }
 
     public List<Integer> emit(String streamId, Collection<Tuple> anchors, List<Object> tuple) {
-        return boltEmit(streamId, anchors, tuple, null);
+        try {
+            return boltEmit(streamId, anchors, tuple, null);
+        } catch (InterruptedException e) {
+            LOG.warn("Thread interrupted when emitting tuple.");
+            Thread.currentThread().interrupt();
+            return Collections.emptyList();
+        }
     }
 
     @Override
     public void emitDirect(int taskId, String streamId, Collection<Tuple> anchors, List<Object> tuple) {
-        boltEmit(streamId, anchors, tuple, taskId);
+        try {
+            boltEmit(streamId, anchors, tuple, taskId);
+        } catch (InterruptedException e) {
+            LOG.warn("Thread interrupted when emiting tuple.");
+            Thread.currentThread().interrupt();
+            return;
+        }
     }
 
-    private List<Integer> boltEmit(String streamId, Collection<Tuple> anchors, List<Object> values, Integer targetTaskId) {
+    private List<Integer> boltEmit(String streamId, Collection<Tuple> anchors, List<Object> values, Integer targetTaskId) throws InterruptedException {
         List<Integer> outTasks;
         if (targetTaskId != null) {
-            outTasks = taskData.getOutgoingTasks(targetTaskId, streamId, values);
+            outTasks = task.getOutgoingTasks(targetTaskId, streamId, values);
         } else {
-            outTasks = taskData.getOutgoingTasks(streamId, values);
+            outTasks = task.getOutgoingTasks(streamId, values);
         }
 
         for (Integer t : outTasks) {
@@ -99,9 +112,9 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
             TupleImpl tupleExt = new TupleImpl(executor.getWorkerTopologyContext(), values, taskId, streamId, msgId);
 //            TupleImpl tupleExt = new TupleImpl(null, values, taskId, streamId, msgId);
             xsfer.transfer(t, tupleExt);
-        }
+    }
         if (isEventLoggers) {
-            executor.sendToEventLogger(executor, taskData, values, executor.getComponentId(), null, random);
+            task.sendToEventLogger(executor, values, executor.getComponentId(), null, random);
         }
         return outTasks;
     }
@@ -113,7 +126,7 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
         long ackValue = ((TupleImpl) input).getAckVal();
         Map<Long, Long> anchorsToIds = input.getMessageId().getAnchorsToIds();
         for (Map.Entry<Long, Long> entry : anchorsToIds.entrySet()) {
-            executor.sendUnanchored(taskData, Acker.ACKER_ACK_STREAM_ID,
+            task.sendUnanchored(Acker.ACKER_ACK_STREAM_ID,
                     new Values(entry.getKey(), Utils.bitXor(entry.getValue(), ackValue)),
                     executor.getExecutorTransfer());
         }
@@ -122,7 +135,7 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
             LOG.info("BOLT ack TASK: {} TIME: {} TUPLE: {}", taskId, delta, input);
         }
         BoltAckInfo boltAckInfo = new BoltAckInfo(input, taskId, delta);
-        boltAckInfo.applyOn(taskData.getUserContext());
+        boltAckInfo.applyOn(task.getUserContext());
         if (delta != 0) {
             ((BoltExecutorStats) executor.getStats()).boltAckedTuple(
                     input.getSourceComponent(), input.getSourceStreamId(), delta);
@@ -133,7 +146,7 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
     public void fail(Tuple input) {
         Set<Long> roots = input.getMessageId().getAnchors();
         for (Long root : roots) {
-            executor.sendUnanchored(taskData, Acker.ACKER_FAIL_STREAM_ID,
+            task.sendUnanchored(Acker.ACKER_FAIL_STREAM_ID,
                     new Values(root), executor.getExecutorTransfer());
         }
         long delta = tupleTimeDelta((TupleImpl) input);
@@ -141,7 +154,7 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
             LOG.info("BOLT fail TASK: {} TIME: {} TUPLE: {}", taskId, delta, input);
         }
         BoltFailInfo boltFailInfo = new BoltFailInfo(input, taskId, delta);
-        boltFailInfo.applyOn(taskData.getUserContext());
+        boltFailInfo.applyOn(task.getUserContext());
         if (delta != 0) {
             ((BoltExecutorStats) executor.getStats()).boltFailedTuple(
                     input.getSourceComponent(), input.getSourceStreamId(), delta);
@@ -152,8 +165,17 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
     public void resetTimeout(Tuple input) {
         Set<Long> roots = input.getMessageId().getAnchors();
         for (Long root : roots) {
-            executor.sendUnanchored(taskData, Acker.ACKER_RESET_TIMEOUT_STREAM_ID,
-                    new Values(root), executor.getExecutorTransfer());
+            task.sendUnanchored(Acker.ACKER_RESET_TIMEOUT_STREAM_ID, new Values(root), executor.getExecutorTransfer());
+        }
+    }
+
+    @Override
+    public void flush() {
+        try {
+            xsfer.flush();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Bolt thread interrupted during flush()");
         }
     }
 

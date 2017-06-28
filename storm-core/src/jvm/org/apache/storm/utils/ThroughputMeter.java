@@ -71,7 +71,7 @@ public class ThroughputMeter {
 
         long result = throughput(count, startTime, currTime) / 1000; // K/sec
         LOG.error("====> {} : {} K/sec", name, result);
-        System.err.printf("%s : %,d K/sec\n", name, result);
+        System.err.printf("%s - %s : %,d K/sec\n", name, Thread.currentThread().getName(), result);
         startTime = currTime;
         count=0;
         return result;

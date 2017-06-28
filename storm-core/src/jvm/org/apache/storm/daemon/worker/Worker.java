@@ -244,7 +244,7 @@ public class Worker implements Shutdownable, DaemonCommon {
 
             private void setupFlushTuple(final List<IRunningExecutor> newExecutors) {
 //                StormTimer timerTask = workerState.getUserTimer();
-                Integer batchSize = Utils.getInt(conf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
+                Integer batchSize = Utils.getInt(conf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE));
                 if(batchSize==1)
                     return;
 //                final Long flushInterval = Utils.getLong( conf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS) );

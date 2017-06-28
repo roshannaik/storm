@@ -161,8 +161,12 @@ public class JCQueueTest extends TestCase {
 
         @Override
         public void run() {
-            for (long i = 0; i < _max && !(Thread.currentThread().isInterrupted()); i++) {
-                queue.publish(i);
+            try {
+                for (long i = 0; i < _max && !(Thread.currentThread().isInterrupted()); i++) {
+                    queue.publish(i);
+                }
+            } catch (InterruptedException e) {
+                return;
             }
         }
     }
@@ -189,10 +193,10 @@ public class JCQueueTest extends TestCase {
     }
 
     private static JCQueue createQueue(String name, int queueSize) {
-        return new JCQueue(name, ProducerType.MULTI, queueSize, 0L, 1);
+        return new JCQueue(name, ProducerType.MULTI, queueSize, 1);
     }
 
     private static JCQueue createQueue(String name, int batchSize, int queueSize) {
-        return new JCQueue(name, ProducerType.MULTI, queueSize, 0L, batchSize);
+        return new JCQueue(name, ProducerType.MULTI, queueSize, batchSize);
     }
 }

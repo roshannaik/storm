@@ -46,6 +46,8 @@ public class BoltExecutor extends Executor {
 
     private final Callable<Boolean> executeSampler;
     private final boolean isSystemBoltExecutor;
+    private BoltOutputCollectorImpl outputCollector;
+
     public BoltExecutor(WorkerState workerData, List<Long> executorId, Map<String, String> credentials) {
         super(workerData, executorId, credentials);
         this.executeSampler = ConfigUtils.mkStatsSampler(stormConf);
@@ -79,7 +81,7 @@ public class BoltExecutor extends Executor {
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
             }
 
-            IOutputCollector outputCollector = new BoltOutputCollectorImpl(this, taskData, entry.getKey(), rand, hasEventLoggers, ackingEnabled, isDebug);
+            this.outputCollector = new BoltOutputCollectorImpl(this, taskData, entry.getKey(), rand, hasEventLoggers, ackingEnabled, isDebug);
             boltObject.prepare(stormConf, userContext, new OutputCollector(outputCollector));
         }
         openOrPrepareWasCalled.set(true);
@@ -93,7 +95,7 @@ public class BoltExecutor extends Executor {
 
         return new Callable<Object>() {
 //            RunningStat latency = new RunningStat("ACK Bolt full latency");
-            RunningStat avgConsumeCount = new RunningStat("BOLT Avg consume count", 2_000_000);
+            RunningStat avgConsumeCount = new RunningStat("BOLT Avg consume count", 10_000_000, true);
             @Override
             public Object call() throws Exception {
 //                long start = System.currentTimeMillis();
@@ -108,12 +110,14 @@ public class BoltExecutor extends Executor {
         };
     }
 
-    RunningStat latency = new RunningStat(getComponentId() + " Latency");
+//    RunningStat latency = new RunningStat(getComponentId() + " Latency");
     @Override
     public void tupleActionFn(int taskId, TupleImpl tuple) throws Exception {
-        long start = System.currentTimeMillis();
+//        long start = System.currentTimeMillis();
         String streamId = tuple.getSourceStreamId();
-        if (Constants.CREDENTIALS_CHANGED_STREAM_ID.equals(streamId)) {
+        if (Constants.SYSTEM_FLUSH_STREAM_ID.equals(streamId)) {
+            outputCollector.flush();
+        } else if (Constants.CREDENTIALS_CHANGED_STREAM_ID.equals(streamId)) {
             Object taskObject = idToTask.get(taskId).getTaskObject();
             if (taskObject instanceof ICredentialsListener) {
                 ((ICredentialsListener) taskObject).setCredentials((Map<String, String>) tuple.getValue(0));
@@ -139,7 +143,7 @@ public class BoltExecutor extends Executor {
             if (isDebug) {
                 LOG.info("Execute done TUPLE {} TASK: {} DELTA: {}", tuple, taskId, delta);
             }
-            new BoltExecuteInfo(tuple, taskId, delta).applyOn(idToTask.get(taskId).getUserContext());
+            new BoltExecuteInfo(tuple, taskId, delta).applyOn(idToTask.get(taskId).getUserContext()); //TODO: Roshan: eliminate BoltExecuteInfo allocation by passing params directly
             if (delta != 0) {
                 ((BoltExecutorStats) stats).boltExecuteTuple(tuple.getSourceComponent(), tuple.getSourceStreamId(), delta);
             }

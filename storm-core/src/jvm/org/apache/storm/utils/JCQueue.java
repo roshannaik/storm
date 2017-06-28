@@ -18,10 +18,11 @@
 
 package org.apache.storm.utils;
 
-// TODO: publish is blocking(), either we need a timeout on it. or need to figure out if timeouts are needed for stopping.
+// TODO: publish is blocking(), either we need a timeout on it, or need to figure out if timeouts are needed for stopping.
 // TODO: Remove return 1L in Worker.java
-// TODO: Add metric to count how often consumeBatch consume nothing
-// TODO: shutdown takes longer (in IDE) due to ZK connection termination
+// TODO: Add metrics to count how often consumeBatch consume nothing, publishes fail/succeed, avg consume count, avg batch size for flushes on flushTuple
+// TODO: shutdown takes longer (at least in IDE) due to ZK connection termination
+// TODO: Document topology.producer.batch.size, topology.flush.tuple.freq.millis & deprecations
 
 import com.lmax.disruptor.dsl.ProducerType;
 import org.apache.storm.metric.api.IStatefulObject;
@@ -49,6 +50,7 @@ public class JCQueue implements IStatefulObject {
     private interface Inserter {
         // blocking call that can be interrupted with Thread.interrupt()
         void add(Object obj) throws InterruptedException ;
+        void flush( ) throws InterruptedException ;
     }
 
     private class DirectInserter implements Inserter {
@@ -59,22 +61,24 @@ public class JCQueue implements IStatefulObject {
         /** Blocking call, that can be interrupted via Thread.interrupt */
         @Override
         public void add(Object obj) throws InterruptedException {
-            boolean inserted = publishDirectSingle(obj);
+            boolean inserted = publishInternal(obj);
             while(!inserted) {
-                sleep(0,1);
-                inserted = publishDirectSingle(obj);
+                Thread.yield();
+                if(Thread.interrupted())
+                    throw new InterruptedException();
+                inserted = publishInternal(obj);
             }
         }
-    }
 
-    private void sleep(int millis, int nanos) throws InterruptedException {
-        Thread.yield();
-//        Thread.sleep(millis,nanos);
-    }
+        public void flush( ) throws InterruptedException {
+            return;
+        }
+    } // class DirectInserter
 
     private class BatchInserter implements Inserter {
         private ArrayList<Object> _currentBatch;
         private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 10_000_000);
+        private RunningStat flushMeter = new RunningStat("Avg Flush count", 10_000_000);
 
         public BatchInserter() {
             _currentBatch = new ArrayList<>(_inputBatchSize);
@@ -83,22 +87,26 @@ public class JCQueue implements IStatefulObject {
         @Override
         public void add(Object obj) throws InterruptedException {
             _currentBatch.add(obj);
-
             if (_currentBatch.size() >= _inputBatchSize) {
                 flush();
             }
         }
 
-        // Does not return till at least 1 element is drained or Thread.interrupt() is received
-        private void flush( ) throws InterruptedException {
-            int publishCount = publishDirect(_currentBatch);
+        @Override
+
+        /** Blocking call - Does not return until at least 1 element is drained or Thread.interrupt() is received */
+        public void flush( ) throws InterruptedException {
+            if(_currentBatch.isEmpty())
+                return;
+            int publishCount = publishInternal(_currentBatch);
             while (publishCount==0) { // retry till at least 1 element is drained
                 fullMeter.record();
-                if (Thread.currentThread().isInterrupted())
-                    return;
-                sleep(1000, 0);
-                publishCount = publishDirect(_currentBatch);
+                Thread.yield();
+                if (Thread.interrupted())
+                    throw new InterruptedException();
+                publishCount = publishInternal(_currentBatch);
             }
+            flushMeter.push(publishCount);
             _currentBatch.subList(0, publishCount).clear();
         }
 
@@ -181,34 +189,28 @@ public class JCQueue implements IStatefulObject {
     private final ConcurrentHashMap<Long, Inserter> _batchers = new ConcurrentHashMap<>();
     private final JCQueue.QueueMetrics _metrics;
 
-    private String _queueName = "";
-    private long _readTimeout;
-    private int _highWaterMark = 0;
-    private int _lowWaterMark = 0;
+    private String _queueName;
 
-//    private final AtomicLong _overflowCount = new AtomicLong(0);
-
-    public JCQueue(String queueName, ProducerType type, int size, long readTimeout, int inputBatchSize) {
-        this(queueName, type==ProducerType.SINGLE ? ProducerKind.SINGLE : ProducerKind.MULTI, size, readTimeout, inputBatchSize);
+    public JCQueue(String queueName, ProducerType type, int size, int inputBatchSize) {
+        this(queueName, type==ProducerType.SINGLE ? ProducerKind.SINGLE : ProducerKind.MULTI, size, inputBatchSize);
     }
 
-    public JCQueue(String queueName,  int size, long readTimeout, int inputBatchSize) {
-        this(queueName, ProducerType.MULTI, size, readTimeout, inputBatchSize);
+    public JCQueue(String queueName,  int size, int inputBatchSize) {
+        this(queueName, ProducerType.MULTI, size, inputBatchSize);
     }
 
-    public JCQueue(String queueName, ProducerKind type, int size, long readTimeout, int inputBatchSize) {
+    public JCQueue(String queueName, ProducerKind type, int size, int inputBatchSize) {
         this._queueName = queueName;
-        _readTimeout = readTimeout;
 
         if (type == ProducerKind.SINGLE)
-            _buffer = new SpscArrayQueue<>(size);
+            this._buffer = new SpscArrayQueue<>(size);
         else
-            _buffer = new MpscArrayQueue<>(size);
+            this._buffer = new MpscArrayQueue<>(size);
 
-        _metrics = new JCQueue.QueueMetrics();
-        //The batch size can be no larger than half the full queue size.
-        //This is mostly to avoid contention issues.
-        _inputBatchSize = Math.max(1, Math.min(inputBatchSize, size/2));
+        this._metrics = new JCQueue.QueueMetrics();
+
+        //The batch size can be no larger than half the full queue size, to avoid contention issues.
+        this._inputBatchSize = Math.max(1, Math.min(inputBatchSize, size/2));
     }
 
     public String getName() {
@@ -220,13 +222,14 @@ public class JCQueue implements IStatefulObject {
     }
 
     public void haltWithInterrupt() {
-        if( publishDirectSingle(INTERRUPT) ){
+        if( publishInternal(INTERRUPT) ){
             _metrics.close();
         } else {
             throw new RuntimeException(new QueueFullException());
         }
     }
 
+    /** Non blocking. Returns immediately if Q is empty. Returns number of elements consumed from Q */
     public int consume(JCQueue.Consumer consumer) {
         try {
             return consumerImpl(consumer);
@@ -235,7 +238,7 @@ public class JCQueue implements IStatefulObject {
         }
     }
 
-
+    /** Non blocking. Returns immediately if Q is empty. Returns number of elements consumed from Q */
     private int consumerImpl(Consumer consumer) throws InterruptedException {
         int count = _buffer.drain(
                 obj -> {
@@ -252,8 +255,6 @@ public class JCQueue implements IStatefulObject {
         _metrics.notifyDrain(count);
         if(count==0)
             emptyMeter.record();
-//        else
-//            System.err.println("yay");
         return count;
     }
 
@@ -263,7 +264,7 @@ public class JCQueue implements IStatefulObject {
     }
 
     // Non Blocking. returns true/false indicating success/failure
-    private boolean publishDirectSingle(Object obj)  {
+    private boolean publishInternal(Object obj)  {
         if( _buffer.offer(obj) ) {
             _metrics.notifyArrivals(1);
             return true;
@@ -272,7 +273,7 @@ public class JCQueue implements IStatefulObject {
     }
 
     // Non Blocking. returns count of how many inserts succeeded
-    private int publishDirect(ArrayList<Object> objs) {
+    private int publishInternal(ArrayList<Object> objs) {
         MessagePassingQueue.Supplier<Object> supplier =
                 new MessagePassingQueue.Supplier<Object> (){
                     int i = 0;
@@ -286,23 +287,37 @@ public class JCQueue implements IStatefulObject {
         return count;
     }
 
-    /** Blocking call, that can be interrupted via Thread.interrupt() */
-    public void publish(Object obj) {
+    /** Blocking call. Retries, till it can successfully publish the obj. Can be interrupted via Thread.interrupt().
+     * TODO: Roshan: update metrics for retry attempts
+     */
+    public void publish(Object obj) throws InterruptedException {
         Long id = getId();
-        Inserter batcher = _batchers.get(id);
-        if (batcher == null) {
+        Inserter inserter = _batchers.get(id);
+        if (inserter == null) {
             if (_inputBatchSize > 1) {
-                batcher = new BatchInserter();
+                inserter = new BatchInserter();
             } else {
-                batcher = new DirectInserter();
+                inserter = new DirectInserter();
             }
             //This publisher thread is the only one ever creating a batcher for this thd id, so this is safe
-            _batchers.put(id, batcher);
+            _batchers.put(id, inserter);
         }
-        try {
-            batcher.add(obj);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        inserter.add(obj);
+    }
+
+    /** Non-blocking call, returns false if failed **/
+    public boolean tryPublish(Object obj) {
+        return publishInternal(obj);
+    }
+
+    /** if(batchSz>1) : Blocking call. Does not return until at least 1 element is drained or Thread.interrupt() is received
+     *  else : NO-OP. Returns immediately. doesnt throw.
+     */
+    public void flush() throws InterruptedException {
+        Long id = getId();
+        Inserter inserter = _batchers.get(id);
+        if (inserter != null) {
+            inserter.flush();
         }
     }
 
@@ -325,6 +340,6 @@ public class JCQueue implements IStatefulObject {
 
     public interface Consumer {
         void accept(Object event) throws Exception ;
-        void flush();
+        void flush() throws InterruptedException;
     }
 }

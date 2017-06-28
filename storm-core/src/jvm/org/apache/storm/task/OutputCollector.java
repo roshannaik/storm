@@ -233,4 +233,9 @@ public class OutputCollector implements IOutputCollector {
     public void reportError(Throwable error) {
         _delegate.reportError(error);
     }
+
+    @Override
+    public void flush() {
+        _delegate.flush();
+    }
 }

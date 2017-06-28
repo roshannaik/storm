@@ -23,6 +23,7 @@ import org.apache.storm.messaging.TaskMessage;
 import org.apache.storm.serialization.KryoTupleSerializer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Tuple;
+import org.apache.storm.utils.JCQueue;
 import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,30 +37,32 @@ public class ExecutorTransfer  {
     private static final Logger LOG = LoggerFactory.getLogger(ExecutorTransfer.class);
 
     private final WorkerState workerData; // TODO: Roshan: consider having a local copy of relevant info ? and update it when it changes
-    private final Map stormConf; // TODO: Roshan: Remove this field ?
     private final KryoTupleSerializer serializer;
     private final boolean isDebug;
     private final int producerBatchSz;
     private int currBatchSz = 0;
+    private final Map<Integer,JCQueue> shortExecutorReceiveQueueMap;
+    private final HashMap<Integer, JCQueue> outboundQueues;
 
     HashMap<Integer, List<TaskMessage>> remoteMap  = new HashMap<>();
 
     public ExecutorTransfer(WorkerState workerData, Map stormConf) {
         this.workerData = workerData;
-        this.stormConf = stormConf;
         this.serializer = new KryoTupleSerializer(stormConf, workerData.getWorkerTopologyContext());
         this.isDebug = Utils.getBoolean(stormConf.get(Config.TOPOLOGY_DEBUG), false);
-        this.producerBatchSz = Utils.getInt(stormConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE));
+        this.producerBatchSz = Utils.getInt(stormConf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE));
+        this.shortExecutorReceiveQueueMap = workerData.getShortExecutorReceiveQueueMap();
+        this.outboundQueues = new HashMap<>();
     }
 
-    public void transfer(int task, Tuple tuple) {
+    public void transfer(int task, Tuple tuple) throws InterruptedException {
         AddressedTuple addressedTuple = new AddressedTuple(task, tuple);
         if (isDebug) {
             LOG.info("TRANSFERRING tuple {}", addressedTuple);
         }
 
         if( workerData.isGoingToLocalWorker(serializer, addressedTuple) ) {
-            workerData.transferLocal(addressedTuple);
+            transferLocal(addressedTuple);
         } else {
             cacheRemoteTuples(serializer, addressedTuple, remoteMap);
             ++currBatchSz;
@@ -74,7 +77,7 @@ public class ExecutorTransfer  {
         return "No Queue here";
     }
 
-
+    //TODO: Roshan: double batching going on here. do we need it ? remote map can be created in the workerTransferThd
     private static void cacheRemoteTuples(KryoTupleSerializer serializer, AddressedTuple tuple, Map<Integer, List<TaskMessage>> remoteMap) {
         int destTask = tuple.dest;
         if (! remoteMap.containsKey(destTask)) {
@@ -83,13 +86,34 @@ public class ExecutorTransfer  {
         remoteMap.get(destTask).add(new TaskMessage(destTask, serializer.serialize(tuple.getTuple())));
     }
 
+    public void flush() throws InterruptedException {
+        flushLocal();
+        flushRemotes();
+    }
 
     // flushes local and remote maps
-    public void flushRemotes() {
+    private void flushRemotes() throws InterruptedException {
         if (!remoteMap.isEmpty()) {
-            workerData.transferRemote(remoteMap);
+            workerData.flushRemotes(remoteMap);
+            remoteMap.clear();
         }
-        remoteMap.clear();
     }
+
+    public void transferLocal(AddressedTuple tuple) throws InterruptedException {
+        JCQueue queue = outboundQueues.get(tuple.dest);
+        if (queue==null) {
+            queue = shortExecutorReceiveQueueMap.get(tuple.dest);
+            outboundQueues.put(tuple.dest, queue);
+        }
+        queue.publish(tuple);
+    }
+
+    public void flushLocal() throws InterruptedException {
+        for (JCQueue queue : outboundQueues.values()) {
+            queue.flush();
+        }
+    }
+
+
 
 }

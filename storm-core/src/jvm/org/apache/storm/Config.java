@@ -1945,12 +1945,6 @@ public class Config extends HashMap<String, Object> {
     public static final String TOPOLOGY_EXECUTOR_RECEIVE_BUFFER_SIZE="topology.executor.receive.buffer.size";
 
     /**
-     * The size of the Disruptor send queue for each executor. Must be a power of 2.
-     */
-    @isPowerOf2
-    public static final String TOPOLOGY_EXECUTOR_SEND_BUFFER_SIZE="topology.executor.send.buffer.size";
-
-    /**
      * The size of the Disruptor transfer queue for each worker.
      */
     @isInteger
@@ -1964,14 +1958,6 @@ public class Config extends HashMap<String, Object> {
     @isInteger
     public static final String TOPOLOGY_TICK_TUPLE_FREQ_SECS="topology.tick.tuple.freq.secs";
 
-   /**
-    * @deprecated this is no longer supported
-    * Configure the wait strategy used for internal queuing. Can be used to tradeoff latency
-    * vs. throughput
-    */
-    @Deprecated
-    @isString
-    public static final String TOPOLOGY_DISRUPTOR_WAIT_STRATEGY="topology.disruptor.wait.strategy";
 
     /**
      * The size of the shared thread pool for worker tasks to make use of. The thread pool can be accessed
@@ -2186,30 +2172,21 @@ public class Config extends HashMap<String, Object> {
     public static final String TOPOLOGY_ISOLATED_MACHINES = "topology.isolate.machines";
 
     /**
-     * Configure timeout milliseconds used for disruptor queue wait strategy. Can be used to tradeoff latency
-     * vs. CPU usage
-     */
-    @isInteger
-    @NotNull
-    public static final String TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS="topology.disruptor.wait.timeout.millis";
-
-    /**
      * The number of tuples to batch before sending to the next thread.  This number is just an initial suggestion and
      * the code may adjust it as your topology runs.
      */
     @isInteger
     @isPositiveNumber
     @NotNull
-    public static final String TOPOLOGY_DISRUPTOR_BATCH_SIZE="topology.disruptor.batch.size";
+    public static final String TOPOLOGY_PRODUCER_BATCH_SIZE="topology.producer.batch.size";
 
     /**
-     * The maximum age in milliseconds a batch can be before being sent to the next thread.  This number is just an
-     * initial suggestion and the code may adjust it as your topology runs.
+     * How frequently the flush tuple needs to sent to the tasks.
      */
     @isInteger
-    @isPositiveNumber
+    @isPositiveNumber(includeZero = true)
     @NotNull
-    public static final String TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS="topology.disruptor.batch.timeout.millis";
+    public static final String TOPOLOGY_FLUSH_TUPLE_FREQ_MILLIS="topology.flush.tuple.freq.millis";
 
     /**
      * Minimum number of nimbus hosts where the code must be replicated before leader nimbus

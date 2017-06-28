@@ -27,29 +27,20 @@ public class RunningStat  {
     private boolean disable;
     private long count=0;
 
-    public RunningStat()
-    { this.name = "" ; }
-
-    public RunningStat(String name)
-    {
-        this.name = name;
-    }
-
     public RunningStat(String name, boolean disable)
     {
-        this.name = name;
-        this.disable = disable;
-    }
-
-    public RunningStat(String name, int printFreq, boolean disable)
-    {
-        this.name = name;
-        this.printFreq = printFreq;
-        this.disable = disable;
+        this(name, printFreq, disable);
     }
 
     public RunningStat(String name, int printFreq) {
         this(name, printFreq, false);
+    }
+
+    public RunningStat(String name, int printFreq, boolean disable)
+    {
+        this.name = name + "_" + Thread.currentThread().getName() ;
+        this.printFreq = printFreq;
+        this.disable = disable;
     }
 
     public void clear()  {
@@ -79,7 +70,7 @@ public class RunningStat  {
             m_oldS = m_newS;
         }
         if(++count==printFreq) {
-            System.err.printf("  ***> %s - %,f\n", name, mean());
+            System.err.printf("  ***> %s - %,.2f\n", name, mean());
             count=0;
         }
     }

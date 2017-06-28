@@ -132,6 +132,11 @@ public class SpoutOutputCollector implements ISpoutOutputCollector {
     }
 
     @Override
+    public void flush() {
+        _delegate.flush();
+    }
+
+    @Override
     public void reportError(Throwable error) {
         _delegate.reportError(error);
     }

@@ -60,6 +60,7 @@ public class SpoutExecutor extends Executor {
     private final SpoutThrottlingMetrics spoutThrottlingMetrics;
     private final boolean hasAckers;
     private RotatingMap<Long, TupleInfo> pending;
+    SpoutOutputCollectorImpl spoutOutputCollector;
 
     public SpoutExecutor(final WorkerState workerData, final List<Long> executorId, Map<String, String> credentials) {
         super(workerData, executorId, credentials);
@@ -102,7 +103,7 @@ public class SpoutExecutor extends Executor {
         for (Map.Entry<Integer, Task> entry : idToTask.entrySet()) {
             Task taskData = entry.getValue();
             ISpout spoutObject = (ISpout) taskData.getTaskObject();
-            SpoutOutputCollectorImpl spoutOutputCollector = new SpoutOutputCollectorImpl(
+            spoutOutputCollector = new SpoutOutputCollectorImpl(
                     spoutObject, this, taskData, entry.getKey(), emittedCount,
                     hasAckers, rand, hasEventLoggers, isDebug, pending);
             SpoutOutputCollector outputCollector = new SpoutOutputCollector(spoutOutputCollector);
@@ -125,7 +126,7 @@ public class SpoutExecutor extends Executor {
     @Override
     public Callable<Object> call() throws Exception {
         init(idToTask);
-        RunningStat spoutConsCount = new RunningStat("Spout Avg consume count", 1_000_000, true);
+        RunningStat spoutConsCount = new RunningStat("Spout Avg consume count", 20_000_000, true);
         return new Callable<Object>() {
             int i = 0;
             @Override
@@ -179,7 +180,9 @@ public class SpoutExecutor extends Executor {
     @Override
     public void tupleActionFn(int taskId, TupleImpl tuple) throws Exception {
         String streamId = tuple.getSourceStreamId();
-        if (streamId.equals(Constants.SYSTEM_TICK_STREAM_ID)) {
+        if (Constants.SYSTEM_FLUSH_STREAM_ID.equals(streamId)) {
+            spoutOutputCollector.flush();
+        } else if (streamId.equals(Constants.SYSTEM_TICK_STREAM_ID)) {
             pending.rotate();
         } else if (streamId.equals(Constants.METRICS_TICK_STREAM_ID)) {
             metricsTick(idToTask.get(taskId), tuple);

@@ -65,7 +65,13 @@ public class ExecutorShutdown implements Shutdownable, IRunningExecutor {
         TupleImpl tuple = new TupleImpl(executor.getWorkerTopologyContext(), new Values(credentials), (int) Constants.SYSTEM_TASK_ID,
                 Constants.CREDENTIALS_CHANGED_STREAM_ID);
         AddressedTuple addressedTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
-        executor.getReceiveQueue().publish(addressedTuple);
+        try {
+            executor.getReceiveQueue().publish(addressedTuple);
+            executor.getReceiveQueue().flush();
+        } catch (InterruptedException e) {
+            LOG.warn("Thread was interrupted");
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override

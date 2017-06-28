@@ -100,6 +100,8 @@ public class StormTimer implements AutoCloseable {
                         // events.
                         Time.sleep(1000);
                     }
+                    if(Thread.interrupted())
+                        this.active.set(false);
                 } catch (Throwable e) {
                     if (!(Utils.exceptionCauseIsInstanceOf(InterruptedException.class, e))
                             && !(Utils.exceptionCauseIsInstanceOf(ClosedByInterruptException.class, e))) {
@@ -161,6 +163,17 @@ public class StormTimer implements AutoCloseable {
      * @param jitterMs add jitter to the run
      */
     public void schedule(int delaySecs, Runnable func, boolean checkActive, int jitterMs) {
+        scheduleMs(Time.secsToMillisLong(delaySecs), func, checkActive, jitterMs);
+    }
+
+    /**
+     * Same as schedule but with millisecond resolution
+     * @param delayMs the number of milliseconds to delay before running the function
+     * @param func the function to run
+     * @param checkActive whether to check is the timer is active
+     * @param jitterMs add jitter to the run
+     */
+    public void scheduleMs(long delayMs, Runnable func, boolean checkActive, int jitterMs) {
         if (func == null) {
             throw new RuntimeException("function to schedule is null!");
         }
@@ -168,7 +181,7 @@ public class StormTimer implements AutoCloseable {
             checkActive();
         }
         String id = Utils.uuid();
-        long endTimeMs = Time.currentTimeMillis() + Time.secsToMillisLong(delaySecs);
+        long endTimeMs = Time.currentTimeMillis() + delayMs;
         if (jitterMs > 0) {
             endTimeMs = this.task.random.nextInt(jitterMs) + endTimeMs;
         }
@@ -177,6 +190,10 @@ public class StormTimer implements AutoCloseable {
 
     public void schedule(int delaySecs, Runnable func) {
         schedule(delaySecs, func, true, 0);
+    }
+
+    public void scheduleMs(long delayMs, Runnable func) {
+        scheduleMs(delayMs, func, true, 0);
     }
 
     /**
@@ -195,6 +212,24 @@ public class StormTimer implements AutoCloseable {
             }
         });
     }
+
+    /**
+     * Schedule a function to run recurrently
+     * @param delayMs the number of seconds to delay before running the function
+     * @param recurMs the time between each invocation
+     * @param func the function to run
+     */
+    public void scheduleRecurringMs(long delayMs, final long recurMs, final Runnable func) {
+        scheduleMs(delayMs, new Runnable() {
+            @Override
+            public void run() {
+                func.run();
+                // This avoids a race condition with cancel-timer.
+                scheduleMs(recurMs, this, true, 0);
+            }
+        });
+    }
+
 
     /**
      * schedule a function to run recurrently with jitter

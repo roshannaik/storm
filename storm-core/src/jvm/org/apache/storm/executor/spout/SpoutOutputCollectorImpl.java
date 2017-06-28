@@ -28,13 +28,16 @@ import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.MutableLong;
 import org.apache.storm.utils.RotatingMap;
 import org.apache.storm.utils.Utils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
 public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
-
+    private static final Logger LOG = LoggerFactory.getLogger(SpoutOutputCollectorImpl.class);
     private final SpoutExecutor executor;
     private final Task taskData;
     private final int taskId;
@@ -62,13 +65,36 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
 
     @Override
     public List<Integer> emit(String streamId, List<Object> tuple, Object messageId) {
-        return sendSpoutMsg(streamId, tuple, messageId, null);
+        try {
+            return sendSpoutMsg(streamId, tuple, messageId, null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Spout thread interrupted during emit().");
+            return Collections.emptyList();
+        }
     }
 
     @Override
     public void emitDirect(int taskId, String streamId, List<Object> tuple, Object messageId) {
-        sendSpoutMsg(streamId, tuple, messageId, taskId);
+        try {
+            sendSpoutMsg(streamId, tuple, messageId, taskId);
+        } catch (InterruptedException e) {
+            LOG.warn("Spout thread interrupted during emitDirect().");
+            Thread.currentThread().interrupt();
+            return;
+        }
     }
+
+    @Override
+    public void flush() {
+        try {
+            executor.getExecutorTransfer().flush();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Spout thread interrupted during flush().");
+        }
+    }
+
 
     @Override
     public long getPendingCount() {
@@ -80,7 +106,7 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
         executor.getReportError().report(error);
     }
 
-    private List<Integer> sendSpoutMsg(String stream, List<Object> values, Object messageId, Integer outTaskId) {
+    private List<Integer> sendSpoutMsg(String stream, List<Object> values, Object messageId, Integer outTaskId) throws InterruptedException {
         emittedCount.increment();
 
         List<Integer> outTasks;
@@ -109,7 +135,7 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
             executor.getExecutorTransfer().transfer(t, tuple); // TODO: Roshan: This is also limiting emit() rate to 7.5mill/sec
         }
         if (isEventLoggers) {
-            executor.sendToEventLogger(executor, taskData, values, executor.getComponentId(), messageId, random);
+            taskData.sendToEventLogger(executor, values, executor.getComponentId(), messageId, random);
         }
 
         boolean sample = false;
@@ -131,7 +157,7 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
 
             pending.put(rootId, info);
             List<Object> ackInitTuple = new Values(rootId, Utils.bitXorVals(ackSeq), this.taskId);
-            executor.sendUnanchored(taskData, Acker.ACKER_INIT_STREAM_ID, ackInitTuple, executor.getExecutorTransfer());
+            taskData.sendUnanchored(Acker.ACKER_INIT_STREAM_ID, ackInitTuple, executor.getExecutorTransfer());
         } else if (messageId != null) {
             TupleInfo info = new TupleInfo();
             info.setStream(stream);

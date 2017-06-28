@@ -145,6 +145,10 @@ public class WorkerState implements JCQueue.Consumer {
         return executorReceiveQueueMap;
     }
 
+    public Map<Integer,JCQueue> getShortExecutorReceiveQueueMap() {
+        return shortExecutorReceiveQueueMap;
+    }
+
     public Runnable getSuicideCallback() {
         return suicideCallback;
     }
@@ -248,7 +252,6 @@ public class WorkerState implements JCQueue.Consumer {
         this.executors = new HashSet<>(readWorkerExecutors(stormClusterState, topologyId, assignmentId, port));
         this.transferQueue = new JCQueue("worker-transfer-queue",
             Utils.getInt(topologyConf.get(Config.TOPOLOGY_TRANSFER_BUFFER_SIZE)),
-            (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
             1); // TODO: Roshan: Is this the right batch size for transferQueue ?
 
         this.conf = conf;
@@ -461,41 +464,22 @@ public class WorkerState implements JCQueue.Consumer {
             this::transferLocalBatch));
     }
 
-    public void transferLocalBatch(List<AddressedTuple> tupleBatch) {
-//        Map<Integer, List<AddressedTuple>> groupedLocalTuples = groupLocaltuples(tupleBatch);
-//        transferLocal(groupedLocalTuples);
+
+    private void transferLocalBatch(List<AddressedTuple> tupleBatch) {
+        try {
+            for (AddressedTuple tuple : tupleBatch) {
+                JCQueue queue = shortExecutorReceiveQueueMap.get(tuple.dest);
+                queue.publish(tuple);
+            }
+        } catch (InterruptedException e) {
+            LOG.warn("Thread interrupted : transferLocalBatch(). Setting interrupt flag.");
+            Thread.currentThread().interrupt();
+        }
     }
 
-
-//    Map<Integer, List<AddressedTuple>> groupLocaltuples(List<AddressedTuple> tupleBatch) {
-//        Map<Integer, List<AddressedTuple>> grouping = new HashMap<>();
-//        for (AddressedTuple tuple : tupleBatch) {
-//            groupLocalTuple(grouping, tuple);
-//        }
-//        return grouping;
-//    }
-
-//    private void groupLocalTuple(Map<Integer, List<AddressedTuple>> grouped, AddressedTuple addressedTuple) {
-//        Integer executor = taskToShortExecutor.get(addressedTuple.dest);
-//        if (null == executor) {
-//            LOG.warn("Received invalid messages for unknown tasks. Dropping... ");
-//            return;
-//        }
-//        List<AddressedTuple> current = grouped.get(executor);
-//        if (null == current) {
-//            current = new ArrayList<>();
-//            grouped.put(executor, current);
-//        }
-//        current.add(addressedTuple);
-//    }
-
-    public void transferLocal(AddressedTuple tuple) {
-        JCQueue queue = shortExecutorReceiveQueueMap.get(tuple.dest);
-        queue.publish(tuple);
-    }
-
-    public void transferRemote(Map<Integer, List<TaskMessage>> remoteMap) {
+    public void flushRemotes(Map<Integer, List<TaskMessage>> remoteMap) throws InterruptedException {
         transferQueue.publish(remoteMap);
+        transferQueue.flush();
     }
 
     public boolean isGoingToLocalWorker(KryoTupleSerializer serializer, AddressedTuple tuple) {
@@ -612,8 +596,7 @@ public class WorkerState implements JCQueue.Consumer {
         for (List<Long> executor : executors) {
             receiveQueueMap.put(executor, new JCQueue("receive-queue" + executor.toString(),
                 Utils.getInt(topologyConf.get(Config.TOPOLOGY_EXECUTOR_RECEIVE_BUFFER_SIZE)),
-                (long) topologyConf.get(Config.TOPOLOGY_DISRUPTOR_WAIT_TIMEOUT_MILLIS),
-                    Utils.getInt(topologyConf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_SIZE)) ));
+                    Utils.getInt(topologyConf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE)) ));
 
         }
         return receiveQueueMap;

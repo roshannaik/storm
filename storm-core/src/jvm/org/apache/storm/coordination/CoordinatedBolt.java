@@ -125,10 +125,14 @@ public class CoordinatedBolt implements IRichBolt {
             _delegate.fail(tuple);
         }
 
+        public void flush() {
+            _delegate.flush();
+        }
+
         public void resetTimeout(Tuple tuple) {
             _delegate.resetTimeout(tuple);
         }
-        
+
         public void reportError(Throwable error) {
             _delegate.reportError(error);
         }

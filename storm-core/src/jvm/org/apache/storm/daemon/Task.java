@@ -23,8 +23,10 @@ import org.apache.storm.daemon.metrics.BuiltinMetrics;
 import org.apache.storm.daemon.metrics.BuiltinMetricsUtil;
 import org.apache.storm.daemon.worker.WorkerState;
 import org.apache.storm.executor.Executor;
+import org.apache.storm.executor.ExecutorTransfer;
 import org.apache.storm.generated.Bolt;
 import org.apache.storm.generated.ComponentObject;
+import org.apache.storm.generated.DebugOptions;
 import org.apache.storm.generated.JavaObject;
 import org.apache.storm.generated.ShellComponent;
 import org.apache.storm.generated.SpoutSpec;
@@ -43,6 +45,7 @@ import org.apache.storm.task.TopologyContext;
 import org.apache.storm.task.WorkerTopologyContext;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.TupleImpl;
+import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
@@ -53,6 +56,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.Callable;
 
 public class Task {
@@ -185,6 +189,37 @@ public class Task {
         return builtInMetrics;
     }
 
+    public void sendUnanchored(String stream, List<Object> values, ExecutorTransfer transfer) {
+        Tuple tuple = getTuple(stream, values);
+        List<Integer> tasks = getOutgoingTasks(stream, values);
+        try {
+            for (Integer t : tasks) {
+                transfer.transfer(t, tuple);
+            }
+        } catch (InterruptedException e) {
+            LOG.warn("Thread interrupted during sendUnanchored().");
+            Thread.interrupted();
+        }
+    }
+
+    /**
+     * Send sampled data to the eventlogger if the global or component level debug flag is set (via nimbus api).
+     */
+    public void sendToEventLogger(Executor executor, List values,
+                                  String componentId, Object messageId, Random random) {
+        Map<String, DebugOptions> componentDebug = executor.getStormComponentDebug().get();
+        DebugOptions debugOptions = componentDebug.get(componentId);
+        if (debugOptions == null) {
+            debugOptions = componentDebug.get(executor.getStormId());
+        }
+        double spct = ((debugOptions != null) && (debugOptions.is_enable())) ? debugOptions.get_samplingpct() : 0;
+        if (spct > 0 && (random.nextDouble() * 100) < spct) {
+            sendUnanchored(StormCommon.EVENTLOGGER_STREAM_ID,
+                    new Values(componentId, messageId, System.currentTimeMillis(), values),
+                    executor.getExecutorTransfer());
+        }
+    }
+
     private TopologyContext mkTopologyContext(StormTopology topology) throws IOException {
         Map conf = workerData.getConf();
         return new TopologyContext(
@@ -251,5 +286,4 @@ public class Task {
             }
         }
     }
-
 }

@@ -27,8 +27,8 @@ public class JCQueuePerfTest {
 //        oneProducer2Consumers();
 //        producerFwdConsumer();
 
-//        JCQueue spoutQ = new JCQueue("spoutQ", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
-//        JCQueue ackQ = new JCQueue("ackQ", JCQueue.ProducerKind.MULTI, 1024, 100, 100, 0);
+//        JCQueue spoutQ = new JCQueue("spoutQ", JCQueue.ProducerKind.MULTI, 1024, 100, 0);
+//        JCQueue ackQ = new JCQueue("ackQ", JCQueue.ProducerKind.MULTI, 1024, 100, 0);
 //
 //        final AckingProducer ackingProducer = new AckingProducer(spoutQ, ackQ);
 //        final Acker acker = new Acker(ackQ, spoutQ);
@@ -41,8 +41,8 @@ public class JCQueuePerfTest {
     }
 
     private static void producerFwdConsumer() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
-        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100);
+        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100);
 
         final Producer prod = new Producer(q1);
         final Forwarder fwd = new Forwarder(q1,q2);
@@ -53,7 +53,7 @@ public class JCQueuePerfTest {
 
 
     private static void oneProducer1Consumer() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100);
 
         final Producer prod1 = new Producer(q1);
         final Consumer cons1 = new Consumer(q1);
@@ -62,8 +62,8 @@ public class JCQueuePerfTest {
     }
 
     private static void oneProducer2Consumers() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
-        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100, 100);
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100);
+        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100);
 
         final Producer2 prod1 = new Producer2(q1,q2);
         final Consumer cons1 = new Consumer(q1);
@@ -130,11 +130,15 @@ class Producer extends MyThread {
 
     @Override
     public void run() {
-        long start = System.currentTimeMillis();
-        while (!Thread.interrupted()) {
-            q.publish(++count);
+        try {
+            long start = System.currentTimeMillis();
+            while (!Thread.interrupted()) {
+                q.publish(++count);
+            }
+            runTime = System.currentTimeMillis() - start;
+        } catch (InterruptedException e) {
+            return;
         }
-        runTime = System.currentTimeMillis() - start;
     }
 
 }
@@ -152,12 +156,16 @@ class Producer2 extends MyThread {
 
     @Override
     public void run() {
-        long start = System.currentTimeMillis();
-        while (!Thread.interrupted()) {
-            q1.publish(++count);
-            q2.publish(count);
+        try {
+            long start = System.currentTimeMillis();
+            while (!Thread.interrupted()) {
+                q1.publish(++count);
+                q2.publish(count);
+            }
+            runTime = System.currentTimeMillis() - start;
+        } catch (InterruptedException e) {
+            return;
         }
-        runTime = System.currentTimeMillis() - start;
 
     }
 }
@@ -176,13 +184,17 @@ class AckingProducer extends MyThread {
 
     @Override
     public void run() {
-        Handler handler = new Handler();
-        long start = System.currentTimeMillis();
-        while (!Thread.interrupted()) {
-            int x = spoutInQ.consume(handler);
-            ackerInQ.publish(count);
+        try {
+            Handler handler = new Handler();
+            long start = System.currentTimeMillis();
+            while (!Thread.interrupted()) {
+                int x = spoutInQ.consume(handler);
+                ackerInQ.publish(count);
+            }
+            runTime = System.currentTimeMillis() - start;
+        } catch (InterruptedException e) {
+            return;
         }
-        runTime = System.currentTimeMillis() - start;
     }
 
     private class Handler implements JCQueue.Consumer {
@@ -226,8 +238,8 @@ class Acker extends MyThread {
         }
 
         @Override
-        public void flush() {
-            // no-op
+        public void flush() throws InterruptedException {
+            spoutInQ.flush();
         }
     }
 }
