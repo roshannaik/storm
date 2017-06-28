@@ -40,6 +40,7 @@ import java.util.Map;
 public class ExecutorShutdown implements Shutdownable, IRunningExecutor {
 
     private static final Logger LOG = LoggerFactory.getLogger(ExecutorShutdown.class);
+
     private final Executor executor;
     private final List<Utils.SmartThread> threads;
     private final Map<Integer, Task> taskDatas;
@@ -58,6 +59,10 @@ public class ExecutorShutdown implements Shutdownable, IRunningExecutor {
     @Override
     public List<Long> getExecutorId() {
         return executor.getExecutorId();
+    }
+
+    public Executor getExecutor() {
+        return executor;
     }
 
     @Override

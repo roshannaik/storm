@@ -220,7 +220,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         Utils.SmartThread handler =
                 Utils.asyncLoop(this, false, reportErrorDie, Thread.NORM_PRIORITY, true, true, handlerName);
         setupTicks(StatsUtil.SPOUT.equals(type));
-        setupFlushTuples();
 
         LOG.info("Finished loading executor " + componentId + ":" + executorId);
         return new ExecutorShutdown(this, Lists.newArrayList(handler), idToTask);
@@ -334,29 +333,20 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         }
     }
 
-    protected void setupFlushTuples() {
-        final Integer flushIntervalMs = Utils.getInt(stormConf.get(Config.TOPOLOGY_FLUSH_TUPLE_FREQ_MILLIS) );
-        final Integer batchSize = Utils.getInt(stormConf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE) );
-        if ( flushIntervalMs != 0 && batchSize>1) {
-            StormTimer timerTask = workerData.getUserTimer();
-            timerTask.scheduleRecurringMs(flushIntervalMs, flushIntervalMs, new Runnable() {
-                @Override
-                public void run() {
-                    TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(),
-                            (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_FLUSH_STREAM_ID);
-                    AddressedTuple flushTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
-                     if( receiveQueue.tryPublish(flushTuple) )
-                         LOG.debug("-- Published Flush tuple to: {} ", receiveQueue.getName());
-                     else
-                         LOG.debug("-- Q is currently full, will retry later. Unable to publish Flush tuple to Q: {} ", receiveQueue.getName());
-
-                }
-            });
-        } else {
-            LOG.info("Flush tuples disabled for executor " + componentId + ":" + executorId);
+    // Called by flush-tuple-timer thread
+    public boolean publishFlushTuple() {
+        TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(),
+                (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_FLUSH_STREAM_ID);
+        AddressedTuple flushTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
+        if( receiveQueue.tryPublish(flushTuple) ) {
+            LOG.debug("Published Flush tuple to: {} ", getComponentId());
+            return true;
+        }
+        else {
+            LOG.debug("RecvQ is currently full, will retry later. Unable to publish Flush tuple to : ", getComponentId());
+            return false;
         }
     }
-
 
     /**
      * Returns map of stream id to component id to grouper
@@ -498,10 +488,6 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         return receiveQueue;
     }
 
-
-//    public JCQueue getTransferWorkerQueue() {
-//        return transferQueue;
-//    }
 
     public IStormClusterState getStormClusterState() {
         return stormClusterState;

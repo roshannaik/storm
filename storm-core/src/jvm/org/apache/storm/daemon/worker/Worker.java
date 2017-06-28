@@ -137,136 +137,134 @@ public class Worker implements Shutdownable, DaemonCommon {
         IStormClusterState stormClusterState =
             ClusterUtils.mkStormClusterState(stateStorage, acls, new ClusterStateContext());
         Credentials initialCredentials = stormClusterState.credentials(topologyId, null);
+        autoCreds = AuthUtils.GetAutoCredentials(topologyConf);
         Map<String, String> initCreds = new HashMap<>();
         if (initialCredentials != null) {
             initCreds.putAll(initialCredentials.get_creds());
         }
-        autoCreds = AuthUtils.GetAutoCredentials(topologyConf);
         subject = AuthUtils.populateSubject(null, autoCreds, initCreds);
+        credentialsAtom = new AtomicReference<Credentials>(initialCredentials);
 
         Subject.doAs(subject, new PrivilegedExceptionAction<Object>() {
             @Override public Object run() throws Exception {
-                workerState =
-                    new WorkerState(conf, context, topologyId, assignmentId, port, workerId, topologyConf, stateStorage,
+                return loadWorker(topologyConf, stateStorage, stormClusterState, initCreds);
+            }
+        }); // Subject.doAs(...)
+
+    }
+
+    private Object loadWorker(Map topologyConf, IStateStorage stateStorage, IStormClusterState stormClusterState, Map<String, String> initCreds)
+            throws Exception {
+        workerState =
+                new WorkerState(conf, context, topologyId, assignmentId, port, workerId, topologyConf, stateStorage,
                         stormClusterState);
 
-                // Heartbeat here so that worker process dies if this fails
-                // it's important that worker heartbeat to supervisor ASAP so that supervisor knows
-                // that worker is running and moves on
-                doHeartBeat();
+        // Heartbeat here so that worker process dies if this fails
+        // it's important that worker heartbeat to supervisor ASAP so that supervisor knows
+        // that worker is running and moves on
+        doHeartBeat();
 
-                executorsAtom = new AtomicReference<>(null);
+        executorsAtom = new AtomicReference<>(null);
 
-                // launch heartbeat threads immediately so that slow-loading tasks don't cause the worker to timeout
-                // to the supervisor
-                workerState.heartbeatTimer
-                    .scheduleRecurring(0, (Integer) conf.get(Config.WORKER_HEARTBEAT_FREQUENCY_SECS), () -> {
-                        try {
-                            doHeartBeat();
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    });
+        // launch heartbeat threads immediately so that slow-loading tasks don't cause the worker to timeout
+        // to the supervisor
+        workerState.heartbeatTimer
+                .scheduleRecurring(0, (Integer) conf.get(Config.WORKER_HEARTBEAT_FREQUENCY_SECS), () -> {
+                    try {
+                        doHeartBeat();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
 
-                workerState.executorHeartbeatTimer
-                    .scheduleRecurring(0, (Integer) conf.get(Config.WORKER_HEARTBEAT_FREQUENCY_SECS),
+        workerState.executorHeartbeatTimer
+                .scheduleRecurring(0, (Integer) conf.get(Config.WORKER_HEARTBEAT_FREQUENCY_SECS),
                         Worker.this::doExecutorHeartbeats);
 
-                workerState.registerCallbacks();
+        workerState.registerCallbacks();
 
-                workerState.refreshConnections(null);
+        workerState.refreshConnections(null);
 
-                workerState.activateWorkerWhenAllConnectionsReady();
+        workerState.activateWorkerWhenAllConnectionsReady();
 
-                workerState.refreshStormActive(null);
+        workerState.refreshStormActive(null);
 
-                workerState.runWorkerStartHooks();
+        workerState.runWorkerStartHooks();
 
-                List<IRunningExecutor> newExecutors = new ArrayList<IRunningExecutor>();
-                for (List<Long> e : workerState.getExecutors()) {
-                    if (ConfigUtils.isLocalMode(topologyConf)) {
-                        newExecutors.add(
-                            LocalExecutor.mkExecutor(workerState, e, initCreds)
+        List<IRunningExecutor> newExecutors = new ArrayList<IRunningExecutor>();
+        for (List<Long> e : workerState.getExecutors()) {
+            if (ConfigUtils.isLocalMode(topologyConf)) {
+                newExecutors.add(
+                        LocalExecutor.mkExecutor(workerState, e, initCreds)
                                 .execute());
-                    } else {
-                        newExecutors.add(
-                            Executor.mkExecutor(workerState, e, initCreds)
+            } else {
+                newExecutors.add(
+                        Executor.mkExecutor(workerState, e, initCreds)
                                 .execute());
-                    }
-                }
-
-                setupFlushTuple(newExecutors);
-
-                executorsAtom.set(newExecutors);
-
-                JCQueue.Consumer tupleHandler = workerState;
-
-                // This thread will publish the messages destined for remote tasks to remote connections
-                transferThread = Utils.asyncLoop(() -> {
-                    int x = workerState.transferQueue.consume(tupleHandler);
-                    if(x==0)
-                        return 1L;
-                    return 0L;
-                });
-                transferThread.setName("Worker-Transfer");
-
-                credentialsAtom = new AtomicReference<Credentials>(initialCredentials);
-
-                establishLogSettingCallback();
-
-                workerState.stormClusterState.credentials(topologyId, Worker.this::checkCredentialsChanged);
-
-                workerState.refreshCredentialsTimer.scheduleRecurring(0,
-                    (Integer) conf.get(Config.TASK_CREDENTIALS_POLL_SECS), new Runnable() {
-                        @Override public void run() {
-                            checkCredentialsChanged();
-                        }
-                    });
-
-                // The jitter allows the clients to get the data at different times, and avoids thundering herd
-                if (!(Boolean) topologyConf.get(Config.TOPOLOGY_DISABLE_LOADAWARE_MESSAGING)) {
-                    workerState.refreshLoadTimer.scheduleRecurringWithJitter(0, 1, 500, workerState::refreshLoad);
-                }
-
-                workerState.refreshConnectionsTimer.scheduleRecurring(0,
-                    (Integer) conf.get(Config.TASK_REFRESH_POLL_SECS), workerState::refreshConnections);
-
-                workerState.resetLogLevelsTimer.scheduleRecurring(0,
-                    (Integer) conf.get(Config.WORKER_LOG_LEVEL_RESET_POLL_SECS), logConfigManager::resetLogLevels);
-
-                workerState.refreshActiveTimer.scheduleRecurring(0, (Integer) conf.get(Config.TASK_REFRESH_POLL_SECS),
-                    workerState::refreshStormActive);
-
-                LOG.info("Worker has topology config {}", Utils.redactValue(topologyConf, Config.STORM_ZOOKEEPER_TOPOLOGY_AUTH_PAYLOAD));
-                LOG.info("Worker {} for storm {} on {}:{}  has finished loading", workerId, topologyId, assignmentId, port);
-                return this;
             }
+        }
 
-            private void setupFlushTuple(final List<IRunningExecutor> newExecutors) {
-//                StormTimer timerTask = workerState.getUserTimer();
-                Integer batchSize = Utils.getInt(conf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE));
-                if(batchSize==1)
-                    return;
-//                final Long flushInterval = Utils.getLong( conf.get(Config.TOPOLOGY_DISRUPTOR_BATCH_TIMEOUT_MILLIS) );
-//                timerTask.scheduleRecurring(flushInterval, flushInterval, new Runnable() {
-//                    @Override
-//                    public void run() {
-//                        TupleImpl tuple = new TupleImpl(context, new Values(flushInterval),
-//                                (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_FLUSH_STREAM_ID);
-//                        List<AddressedTuple> tickTuple =
-//                                Lists.newArrayList(new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple));
-//                        for (IRunningExecutor executor : newExecutors) {
-//                            executor.
-//                        }
-//                        receiveQueue.publish(tickTuple);
-//                    }
-//                });
-                return;
-            }
+        executorsAtom.set(newExecutors);
 
-            ;
+        JCQueue.Consumer tupleHandler = workerState;
+
+        // This thread will publish the messages destined for remote tasks to remote connections
+        transferThread = Utils.asyncLoop(() -> {
+            int x = workerState.transferQueue.consume(tupleHandler);
+            if(x==0)
+                return 1L;
+            return 0L;
         });
+        transferThread.setName("Worker-Transfer");
 
+        establishLogSettingCallback();
+
+        workerState.stormClusterState.credentials(topologyId, Worker.this::checkCredentialsChanged);
+
+        workerState.refreshCredentialsTimer.scheduleRecurring(0,
+                (Integer) conf.get(Config.TASK_CREDENTIALS_POLL_SECS), new Runnable() {
+                    @Override public void run() {
+                        checkCredentialsChanged();
+                    }
+                });
+
+        // The jitter allows the clients to get the data at different times, and avoids thundering herd
+        if (!(Boolean) topologyConf.get(Config.TOPOLOGY_DISABLE_LOADAWARE_MESSAGING)) {
+            workerState.refreshLoadTimer.scheduleRecurringWithJitter(0, 1, 500, workerState::refreshLoad);
+        }
+
+        workerState.refreshConnectionsTimer.scheduleRecurring(0,
+                (Integer) conf.get(Config.TASK_REFRESH_POLL_SECS), workerState::refreshConnections);
+
+        workerState.resetLogLevelsTimer.scheduleRecurring(0,
+                (Integer) conf.get(Config.WORKER_LOG_LEVEL_RESET_POLL_SECS), logConfigManager::resetLogLevels);
+
+        workerState.refreshActiveTimer.scheduleRecurring(0, (Integer) conf.get(Config.TASK_REFRESH_POLL_SECS),
+                workerState::refreshStormActive);
+
+        setupFlushTupleTimer(newExecutors);
+
+        LOG.info("Worker has topology config {}", Utils.redactValue(topologyConf, Config.STORM_ZOOKEEPER_TOPOLOGY_AUTH_PAYLOAD));
+        LOG.info("Worker {} for storm {} on {}:{}  has finished loading", workerId, topologyId, assignmentId, port);
+        return this;
+    }
+
+    private void setupFlushTupleTimer(final List<IRunningExecutor> executors) {
+//                StormTimer timerTask = workerState.getUserTimer();
+        Integer batchSize = Utils.getInt(conf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE));
+        final Long flushIntervalMs = Utils.getLong( conf.get(Config.TOPOLOGY_FLUSH_TUPLE_FREQ_MILLIS) );
+        if(batchSize==1 || flushIntervalMs==0)
+            return;
+
+        workerState.flushTupleTimer.scheduleRecurringMs(flushIntervalMs, flushIntervalMs, new Runnable() {
+            @Override
+            public void run() {
+                for (IRunningExecutor exec : executors) {
+                    exec.getExecutor().publishFlushTuple();
+                }
+            }
+        });
+        return;
     }
 
     public void doHeartBeat() throws IOException {
@@ -355,6 +353,7 @@ public class Worker implements Shutdownable, DaemonCommon {
             workerState.userTimer.close();
             workerState.refreshLoadTimer.close();
             workerState.resetLogLevelsTimer.close();
+            workerState.flushTupleTimer.close();
             workerState.closeResources();
 
             LOG.info("Trigger any worker shutdown hooks");
@@ -378,7 +377,8 @@ public class Worker implements Shutdownable, DaemonCommon {
             && workerState.refreshCredentialsTimer.isTimerWaiting()
             && workerState.refreshActiveTimer.isTimerWaiting()
             && workerState.executorHeartbeatTimer.isTimerWaiting()
-            && workerState.userTimer.isTimerWaiting();
+            && workerState.userTimer.isTimerWaiting()
+            && workerState.flushTupleTimer.isTimerWaiting();
     }
 
     public static void main(String[] args) throws Exception {
