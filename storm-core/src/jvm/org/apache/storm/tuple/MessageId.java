@@ -29,13 +29,13 @@ import java.util.Set;
 
 public class MessageId {
     private Map<Long, Long> _anchorsToIds;
-    
+    static Map<Long, Long> emptyAnchor = new HashMap<Long, Long>(); // TODO: make this an immutable map ?
     public static long generateId(Random rand) {
         return rand.nextLong();
     }
 
     public static MessageId makeUnanchored() {
-        return makeId(new HashMap<Long, Long>());
+        return makeId(emptyAnchor);
     }
         
     public static MessageId makeId(Map<Long, Long> anchorsToIds) {

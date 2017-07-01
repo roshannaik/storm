@@ -497,7 +497,7 @@ public class WorkerState implements JCQueue.Consumer {
     }
 
     @Override
-    public void accept(Object packets) throws Exception {
+    public void accept(Object packets)  {
         sendTuplesToRemoteWorker((HashMap<Integer, ArrayList<TaskMessage>>)packets);
     }
 

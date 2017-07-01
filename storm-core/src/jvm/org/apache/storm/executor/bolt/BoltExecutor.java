@@ -143,7 +143,9 @@ public class BoltExecutor extends Executor {
             if (isDebug) {
                 LOG.info("Execute done TUPLE {} TASK: {} DELTA: {}", tuple, taskId, delta);
             }
-            new BoltExecuteInfo(tuple, taskId, delta).applyOn(idToTask.get(taskId).getUserContext()); //TODO: Roshan: eliminate BoltExecuteInfo allocation by passing params directly
+            TopologyContext topologyContext = idToTask.get(taskId).getUserContext();
+            if (!topologyContext.getHooks().isEmpty()) // perf critical. avoid unnecessary allocations
+                new BoltExecuteInfo(tuple, taskId, delta).applyOn(topologyContext);
             if (delta != 0) {
                 ((BoltExecutorStats) stats).boltExecuteTuple(tuple.getSourceComponent(), tuple.getSourceStreamId(), delta);
             }

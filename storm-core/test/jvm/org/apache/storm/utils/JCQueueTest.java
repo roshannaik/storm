@@ -44,8 +44,7 @@ public class JCQueueTest extends TestCase {
             private boolean head = true;
 
             @Override
-            public void accept(Object obj)
-                    throws Exception {
+            public void accept(Object obj) {
                 if (head) {
                     head = false;
                     result.set(obj);
@@ -73,7 +72,7 @@ public class JCQueueTest extends TestCase {
         Runnable consumer = new ConsumerThd(queue, new JCQueue.Consumer() {
             long _expected = 0;
             @Override
-            public void accept(Object obj)  throws Exception {
+            public void accept(Object obj) {
                 if (_expected != ((Number) obj).longValue()) {
                     allInOrder.set(false);
                     System.out.println("Expected " + _expected + " but got " + obj);
@@ -100,8 +99,7 @@ public class JCQueueTest extends TestCase {
         Runnable consumer = new ConsumerThd(queue, new JCQueue.Consumer() {
             long _expected = 0;
             @Override
-            public void accept(Object obj)
-                    throws Exception {
+            public void accept(Object obj) {
                 if (_expected != ((Number)obj).longValue()) {
                     allInOrder.set(false);
                     System.out.println("Expected "+_expected+" but got "+obj);

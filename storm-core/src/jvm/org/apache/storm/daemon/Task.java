@@ -129,8 +129,6 @@ public class Task {
     }
 
 
-
-    // TODO: Roshan: cache the results for each 'stream' arg on first use, then reuse on subsequent calls
     public List<Integer> getOutgoingTasks(String stream, List<Object> values) {
         if (debug) {
             LOG.info("Emitting: {} {} {}", componentId, stream, values);

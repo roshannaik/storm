@@ -47,6 +47,7 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
     private final Boolean isEventLoggers;
     private final Boolean isDebug;
     private final RotatingMap<Long, TupleInfo> pending;
+    private TupleInfo globalTupleInfo = new TupleInfo();
 
     @SuppressWarnings("unused")
     public SpoutOutputCollectorImpl(ISpout spout, SpoutExecutor executor, Task taskData, int taskId,
@@ -120,15 +121,16 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
 
         List<Long> ackSeq = needAck ? new ArrayList<>() : null;
 
-        long rootId = needAck ? MessageId.generateId(random) : 0 ;
-        for (Integer t : outTasks) {
+        long rootId = needAck ? MessageId.generateId(random) : 0;
+        for (int i = 0; i < outTasks.size(); i++) { // perf critical loop. dont use iterators.
+            Integer t = outTasks.get(i);
             MessageId msgId;
             if (needAck) {
                 long as = MessageId.generateId(random);
                 msgId = MessageId.makeRootId(rootId, as);
                 ackSeq.add(as);
             } else {
-                msgId = MessageId.makeUnanchored(); // TODO: Roshan: make this return a singleton map instance
+                msgId = MessageId.makeUnanchored();
             }
 
             TupleImpl tuple = new TupleImpl(executor.getWorkerTopologyContext(), values, this.taskId, stream, msgId); //TODO: Roshan: This is expensive. Limits emit() rate to 7.5 mill/sec (15 mill/sec without it)
@@ -158,15 +160,15 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
             pending.put(rootId, info);
             List<Object> ackInitTuple = new Values(rootId, Utils.bitXorVals(ackSeq), this.taskId);
             taskData.sendUnanchored(Acker.ACKER_INIT_STREAM_ID, ackInitTuple, executor.getExecutorTransfer());
-        } else if (messageId != null) {
-            TupleInfo info = new TupleInfo();
-            info.setStream(stream);
-            info.setValues(values);
-            info.setMessageId(messageId);
-            info.setTimestamp(0);
+        } else if (messageId != null) { // here TupleInfo object can be reused as we are directly calling executor.ackSpoutMsg() & not sending msgs. perf critical
+            globalTupleInfo.clear();
+            globalTupleInfo.setStream(stream);
+            globalTupleInfo.setValues(values);
+            globalTupleInfo.setMessageId(messageId);
+            globalTupleInfo.setTimestamp(0);
             Long timeDelta = sample ? 0L : null;
-            info.setId("0:");
-            executor.ackSpoutMsg(executor, taskData, timeDelta, info);
+            globalTupleInfo.setId("0:");
+            executor.ackSpoutMsg(executor, taskData, timeDelta, globalTupleInfo);
         }
 
         return outTasks;

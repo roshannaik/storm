@@ -60,7 +60,6 @@ import org.apache.storm.stats.StatsUtil;
 import org.apache.storm.task.WorkerTopologyContext;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Fields;
-import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.TupleImpl;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.*;
@@ -228,7 +227,10 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     public abstract void tupleActionFn(int taskId, TupleImpl tuple) throws Exception;
 
     @Override
-    public void accept(Object event) throws Exception {
+    public void accept(Object event) {
+        if (event == JCQueue.INTERRUPT) {
+            throw new RuntimeException(new InterruptedException("JCQ processing interrupted") );
+        }
         AddressedTuple addressedTuple =  (AddressedTuple)event;
         int taskId = addressedTuple.getDest();
 
@@ -236,12 +238,17 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         if (isDebug) {
             LOG.info("Processing received message FOR {} TUPLE: {}", taskId, tuple);
         }
-        if (taskId != AddressedTuple.BROADCAST_DEST) {
-            tupleActionFn(taskId, tuple);
-        } else {
-            for (Integer t : taskIds) {
-                tupleActionFn(t, tuple);
+
+        try {
+            if (taskId != AddressedTuple.BROADCAST_DEST) {
+                tupleActionFn(taskId, tuple);
+            } else {
+                for (Integer t : taskIds) {
+                    tupleActionFn(t, tuple);
+                }
             }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 

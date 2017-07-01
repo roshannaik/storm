@@ -134,7 +134,7 @@ public class SpoutExecutor extends Executor {
                 long start = System.currentTimeMillis();
                 if( i==0 ) {
                    int x = receiveQueue.consume(SpoutExecutor.this);
-                    spoutConsCount.push(x);
+                   spoutConsCount.push(x);
                 }
                 if(++i==8) i=0;
 
@@ -150,8 +150,8 @@ public class SpoutExecutor extends Executor {
                         }
                     }
                     if ( !reachedMaxSpoutPending ) {
-                        for (ISpout spout : spouts) {
-                            spout.nextTuple();
+                        for (int j = 0; j < spouts.size(); j++) { // perf critical loop. dont use iterators.
+                            spouts.get(j).nextTuple();
                         }
                     }
                 } else {

@@ -18,11 +18,13 @@
 
 package org.apache.storm.utils;
 
-// TODO: publish is blocking(), either we need a timeout on it, or need to figure out if timeouts are needed for stopping.
-// TODO: Remove return 1L in Worker.java. Need to do something about topology.disruptor.wait.timeout.millis.
+// TODO: publish() is blocking, either we need a timeout on it, or need to figure out if timeouts are needed for stopping.
+// TODO: Remove return 1L in Worker.java. Need a yield strategy if recvQ is empty (topology.disruptor.wait.timeout.millis ?)
 // TODO: Add metrics to count how often consumeBatch consume nothing, publishes fail/succeed, avg consume count, avg batch size for flushes on flushTuple
 // TODO: shutdown takes longer (at least in IDE) due to ZK connection termination
 // TODO: Document topology.producer.batch.size, topology.flush.tuple.freq.millis & deprecations
+// TODO: dynamic updates to flush.tuple.freq.millis
+// NOTE: Currently batch/unbatched throughput pretty close
 
 import com.lmax.disruptor.dsl.ProducerType;
 import org.apache.storm.metric.api.IStatefulObject;
@@ -43,7 +45,7 @@ public class JCQueue implements IStatefulObject {
     public enum ProducerKind { SINGLE, MULTI };
 
     private static final Logger LOG = LoggerFactory.getLogger(JCQueue.class);
-    private static final Object INTERRUPT = new Object();
+    public static final Object INTERRUPT = new Object();
 
     private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 5_000_000);
 
@@ -78,7 +80,7 @@ public class JCQueue implements IStatefulObject {
     private class BatchInserter implements Inserter {
         private ArrayList<Object> _currentBatch;
         private ThroughputMeter fullMeter = new ThroughputMeter("Q Full", 10_000_000);
-        private RunningStat flushMeter = new RunningStat("Avg Flush count", 10_000_000);
+        private RunningStat flushMeter = new RunningStat("Avg Flush count", 10_000);
 
         public BatchInserter() {
             _currentBatch = new ArrayList<>(_inputBatchSize);
@@ -240,17 +242,7 @@ public class JCQueue implements IStatefulObject {
 
     /** Non blocking. Returns immediately if Q is empty. Returns number of elements consumed from Q */
     private int consumerImpl(Consumer consumer) throws InterruptedException {
-        int count = _buffer.drain(
-                obj -> {
-                    try {
-                        if (obj == INTERRUPT) {
-                            throw new InterruptedException("JCQ processing interrupted");
-                        }
-                        consumer.accept(obj);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                });
+        int count = _buffer.drain(consumer);
         consumer.flush();
         _metrics.notifyDrain(count);
         if(count==0)
@@ -338,8 +330,8 @@ public class JCQueue implements IStatefulObject {
         }
     }
 
-    public interface Consumer {
-        void accept(Object event) throws Exception ;
+    public interface Consumer extends org.jctools.queues.MessagePassingQueue.Consumer<Object> {
+        void accept(Object event) ;
         void flush() throws InterruptedException;
     }
 }

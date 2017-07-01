@@ -199,7 +199,8 @@ class AckingProducer extends MyThread {
 
     private class Handler implements JCQueue.Consumer {
         @Override
-        public void accept(Object event) throws Exception {
+        public void accept(Object event) {
+            // no-op
         }
 
         @Override
@@ -233,8 +234,12 @@ class Acker extends MyThread {
 
     private class Handler implements JCQueue.Consumer {
         @Override
-        public void accept(Object event) throws Exception {
-            spoutInQ.publish(event);
+        public void accept(Object event) {
+            try {
+                spoutInQ.publish(event);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override
@@ -254,7 +259,7 @@ class Consumer extends MyThread {
 
     private class Handler implements JCQueue.Consumer {
         @Override
-        public void accept(Object event) throws Exception {
+        public void accept(Object event) {
             counter.increment();
         }
 
@@ -295,9 +300,13 @@ class Forwarder extends MyThread {
 
     private class Handler implements JCQueue.Consumer {
         @Override
-        public void accept(Object event) throws Exception {
-            outq.publish(event);
-            counter.increment();
+        public void accept(Object event)  {
+            try {
+                outq.publish(event);
+                counter.increment();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override
