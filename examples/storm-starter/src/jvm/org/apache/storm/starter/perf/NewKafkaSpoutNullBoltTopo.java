@@ -109,7 +109,7 @@ public class NewKafkaSpoutNullBoltTopo {
         return props;
     }
 
-
+//  submits to real cluster
     public static void main(String[] args) throws Exception {
         // 1 - Submit topology
         if (args.length == 0) {
@@ -127,7 +127,7 @@ public class NewKafkaSpoutNullBoltTopo {
         Helper.collectMetricsAndKill(TOPOLOGY_NAME, pollInterval, duration, conf);
     }
 
-//    // local cluster
+//    Submits to local cluster
 //    public static void main(String[] args) throws Exception {
 //        // 1 - Submit topology
 //        Config conf = new Config();
