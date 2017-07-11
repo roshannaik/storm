@@ -40,7 +40,7 @@ import java.util.List;
 import java.util.Map;
 
 
-// Copies data from Kafka to Hdfs
+// New Kafka Spout  -> DevNull Bolt
 public class NewKafkaSpoutNullBoltTopo {
 
     // configs - topo parallelism
