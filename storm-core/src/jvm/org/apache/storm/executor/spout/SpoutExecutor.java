@@ -75,7 +75,7 @@ public class SpoutExecutor extends Executor {
     }
 
     public void init(final Map<Integer, Task> idToTask) {
-        latencySampled = new RunningStat("[SAMPLED] Latency", 500_000);
+        latencySampled = new RunningStat("[SAMPLED] Latency", 10_000_000);
         while (!stormActive.get()) {
             Utils.sleep(100);
         }

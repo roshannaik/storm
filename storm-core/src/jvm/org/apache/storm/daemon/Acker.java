@@ -17,6 +17,7 @@
  */
 package org.apache.storm.daemon;
 
+import org.apache.storm.Constants;
 import org.apache.storm.task.IBolt;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
@@ -26,7 +27,6 @@ import org.apache.storm.utils.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
 import java.util.Map;
 
 public class Acker implements IBolt {
@@ -112,6 +112,9 @@ public class Acker implements IBolt {
                 curr = new AckObject();
             }
             pending.put(id, curr);
+        } else if (Constants.SYSTEM_FLUSH_STREAM_ID.equals(streamId)) {
+            collector.flush();
+            return;
         } else {
             LOG.warn("Unknown source stream {} from task-{}", streamId, input.getSourceTask());
             return;

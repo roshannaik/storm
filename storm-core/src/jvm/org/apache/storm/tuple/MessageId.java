@@ -17,10 +17,10 @@
  */
 package org.apache.storm.tuple;
 
-import org.apache.storm.utils.Utils;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -28,14 +28,16 @@ import java.util.Random;
 import java.util.Set;
 
 public class MessageId {
+    final static MessageId unanchoredMsgId =  makeId(Collections.emptyMap());
+
     private Map<Long, Long> _anchorsToIds;
-    static Map<Long, Long> emptyAnchor = new HashMap<Long, Long>(); // TODO: make this an immutable map ?
+
     public static long generateId(Random rand) {
         return rand.nextLong();
     }
 
     public static MessageId makeUnanchored() {
-        return makeId(emptyAnchor);
+        return unanchoredMsgId;
     }
         
     public static MessageId makeId(Map<Long, Long> anchorsToIds) {
