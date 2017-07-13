@@ -94,10 +94,12 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
             outTasks = task.getOutgoingTasks(streamId, values);
         }
 
-        for (Integer t : outTasks) {
-            final Map<Long, Long> anchorsToIds = new HashMap<>();
+        for (int i=0; i<outTasks.size(); ++i) {
+            Integer t = outTasks.get(i);
+            MessageId msgId;
             if (ackingEnabled && anchors != null) {
-                for (Tuple a : anchors) {
+                final Map<Long, Long> anchorsToIds = new HashMap<>();
+                for (Tuple a : anchors) {  //TODO: Roshan: perf critical path. Avoid using iterators here and below
                     Set<Long> rootIds = a.getMessageId().getAnchorsToIds().keySet();
                     if (rootIds.size() > 0) {
                         long edgeId = MessageId.generateId(random);
@@ -107,12 +109,13 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
                         }
                     }
                 }
+                msgId = MessageId.makeId(anchorsToIds);
+            } else {
+                msgId = MessageId.makeUnanchored();
             }
-            MessageId msgId = MessageId.makeId(anchorsToIds);
-            TupleImpl tupleExt = new TupleImpl(executor.getWorkerTopologyContext(), values, taskId, streamId, msgId);
-//            TupleImpl tupleExt = new TupleImpl(null, values, taskId, streamId, msgId);
+            TupleImpl tupleExt = new TupleImpl(executor.getWorkerTopologyContext(), values, executor.getComponentId(), taskId, streamId, msgId);
             xsfer.transfer(t, tupleExt);
-    }
+        }
         if (isEventLoggers) {
             task.sendToEventLogger(executor, values, executor.getComponentId(), null, random);
         }
@@ -144,6 +147,8 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
 
     @Override
     public void fail(Tuple input) {
+        if(!ackingEnabled)
+            return;
         Set<Long> roots = input.getMessageId().getAnchors();
         for (Long root : roots) {
             task.sendUnanchored(Acker.ACKER_FAIL_STREAM_ID,
