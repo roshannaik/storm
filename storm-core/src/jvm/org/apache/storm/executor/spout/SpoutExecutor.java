@@ -124,13 +124,13 @@ public class SpoutExecutor extends Executor {
     }
 
     @Override
-    public Callable<Object> call() throws Exception {
+    public Callable<Long> call() throws Exception {
         init(idToTask);
         RunningStat spoutConsCount = new RunningStat("Spout Avg consume count", 20_000_000, true);
-        return new Callable<Object>() {
+        return new Callable<Long>() {
             int i = 0;
             @Override
-            public Object call() throws Exception {
+            public Long call() throws Exception {
                 long start = System.currentTimeMillis();
                 if( i==0 ) {
                    int x = receiveQueue.consume(SpoutExecutor.this);
@@ -200,7 +200,7 @@ public class SpoutExecutor extends Executor {
         } else {
             Long id = (Long) tuple.getValue(0);
             Long timeDeltaMs = (Long) tuple.getValue(1);
-            TupleInfo tupleInfo = (TupleInfo) pending.remove(id);
+            TupleInfo tupleInfo = pending.remove(id);
             if (tupleInfo != null && tupleInfo.getMessageId() != null) {
                 if (taskId != tupleInfo.getTaskId()) {
                     throw new RuntimeException("Fatal error, mismatched task ids: " + taskId + " " + tupleInfo.getTaskId());

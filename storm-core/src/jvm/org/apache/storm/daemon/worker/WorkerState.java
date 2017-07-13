@@ -483,12 +483,10 @@ public class WorkerState implements JCQueue.Consumer {
         transferQueue.flush();
     }
 
-    public boolean isGoingToLocalWorker(KryoTupleSerializer serializer, AddressedTuple tuple) {
+    public void checkSerialize(KryoTupleSerializer serializer, AddressedTuple tuple) {
         if (trySerializeLocal) {
-            assertCanSerialize(serializer, tuple);
+            serializer.serialize(tuple.getTuple());
         }
-
-        return taskIds.contains(tuple.getDest());
     }
 
     // TODO: consider having a max batch size besides what disruptor does automagically to prevent latency issues
@@ -511,18 +509,6 @@ public class WorkerState implements JCQueue.Consumer {
             readLock.unlock();
         }
         drainer.clear();
-    }
-
-    private void assertCanSerialize(KryoTupleSerializer serializer, List<AddressedTuple> tuples) {
-        // Check that all of the tuples can be serialized by serializing them
-        for (AddressedTuple addressedTuple : tuples) {
-            assertCanSerialize(serializer,addressedTuple);
-        }
-    }
-
-    private void assertCanSerialize(KryoTupleSerializer serializer, AddressedTuple addressedTuple) {
-        // Check tuples can be serialized by serializing it
-        serializer.serialize(addressedTuple.getTuple());
     }
 
     public WorkerTopologyContext getWorkerTopologyContext() {

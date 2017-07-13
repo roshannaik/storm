@@ -23,8 +23,12 @@ import java.util.concurrent.locks.LockSupport;
 public class JCQueuePerfTest {
 
     public static void main(String[] args) throws Exception {
-        oneProducer1Consumer();
+        oneProducer1Consumer(1000);
+//        twoProducer1Consumer(1000);
+//        threeProducer1Consumer(1);
+
 //        oneProducer2Consumers();
+
 //        producerFwdConsumer();
 
 //        JCQueue spoutQ = new JCQueue("spoutQ", JCQueue.ProducerKind.MULTI, 1024, 100, 0);
@@ -40,9 +44,9 @@ public class JCQueuePerfTest {
 
     }
 
-    private static void producerFwdConsumer() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100);
-        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100);
+    private static void producerFwdConsumer(int prodBatchSz) {
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, prodBatchSz);
+        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, prodBatchSz);
 
         final Producer prod = new Producer(q1);
         final Forwarder fwd = new Forwarder(q1,q2);
@@ -52,8 +56,8 @@ public class JCQueuePerfTest {
     }
 
 
-    private static void oneProducer1Consumer() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100);
+    private static void oneProducer1Consumer(int prodBatchSz) {
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 50_000, prodBatchSz);
 
         final Producer prod1 = new Producer(q1);
         final Consumer cons1 = new Consumer(q1);
@@ -61,9 +65,31 @@ public class JCQueuePerfTest {
         runAllThds(prod1, cons1);
     }
 
-    private static void oneProducer2Consumers() {
-        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, 100);
-        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, 100);
+    private static void twoProducer1Consumer(int prodBatchSz) {
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 50_000, prodBatchSz);
+
+        final Producer prod1 = new Producer(q1);
+        final Producer prod2 = new Producer(q1);
+        final Consumer cons1 = new Consumer(q1);
+
+        runAllThds(prod1, prod2, cons1);
+    }
+
+    private static void threeProducer1Consumer(int prodBatchSz) {
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 50_000, prodBatchSz);
+
+        final Producer prod1 = new Producer(q1);
+        final Producer prod2 = new Producer(q1);
+        final Producer prod3 = new Producer(q1);
+        final Consumer cons1 = new Consumer(q1);
+
+        runAllThds(prod1, prod2, prod3, cons1);
+    }
+
+
+    private static void oneProducer2Consumers(int prodBatchSz) {
+        JCQueue q1 = new JCQueue("q1", JCQueue.ProducerKind.MULTI, 1024, prodBatchSz);
+        JCQueue q2 = new JCQueue("q2", JCQueue.ProducerKind.MULTI, 1024, prodBatchSz);
 
         final Producer2 prod1 = new Producer2(q1,q2);
         final Consumer cons1 = new Consumer(q1);

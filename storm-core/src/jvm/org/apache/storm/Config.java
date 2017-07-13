@@ -1939,13 +1939,12 @@ public class Config extends HashMap<String, Object> {
     public static final String TOPOLOGY_AUTO_TASK_HOOKS="topology.auto.task.hooks";
 
     /**
-     * The size of the Disruptor receive queue for each executor. Must be a power of 2.
+     * The size of the receive queue for each executor. Must be a power of 2.
      */
-    @isPowerOf2
     public static final String TOPOLOGY_EXECUTOR_RECEIVE_BUFFER_SIZE="topology.executor.receive.buffer.size";
 
     /**
-     * The size of the Disruptor transfer queue for each worker.
+     * The size of the transfer queue for each worker.
      */
     @isInteger
     @isPowerOf2
@@ -2221,17 +2220,6 @@ public class Config extends HashMap<String, Object> {
     @isString
     public static final String CLIENT_JAR_TRANSFORMER = "client.jartransformer.class";
 
-    /**
-     * This is a config that is not likely to be used.  Internally the disruptor queue will batch entries written
-     * into the queue.  A background thread pool will flush those batches if they get too old.  By default that
-     * pool can grow rather large, and sacrifice some CPU time to keep the latency low.  In some cases you may
-     * want the queue to be smaller so there is less CPU used, but the latency will increase in some situations.
-     * This configs is on a per cluster bases, if you want to control this on a per topology bases you need to set
-     * the java System property for the worker "num_flusher_pool_threads" to the value you want.
-     */
-    @isInteger
-    public static final String STORM_WORKER_DISRUPTOR_FLUSHER_MAX_POOL_SIZE = "storm.worker.disruptor.flusher.max.pool.size";
-    
     /**
      * The plugin to be used for resource isolation
      */

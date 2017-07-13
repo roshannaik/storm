@@ -2228,11 +2228,15 @@ public class Utils {
             String threadName) {
         SmartThread thread = new SmartThread(new Runnable() {
             public void run() {
-                Object s;
+
                 try {
-                    Callable fn = isFactory ? (Callable) afn.call() : afn;
-                    while ((s = fn.call()) instanceof Long) {
-                        Time.sleepSecs((Long) s);  // TODO: Roshan : need to do something about this
+                    Callable<Long> fn = isFactory ? (Callable<Long>) afn.call() : afn;
+                    while (true) {
+                        Long s = fn.call();
+                        if (s==null) // then stop running it
+                            break;
+                        if (s>0)
+                            Thread.sleep(s);  // TODO: Roshan : need to do something about sleep strategy
                     }
                 } catch (Throwable t) {
                     if (Utils.exceptionCauseIsInstanceOf(

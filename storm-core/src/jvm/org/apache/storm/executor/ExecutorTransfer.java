@@ -40,7 +40,7 @@ public class ExecutorTransfer  {
     private final KryoTupleSerializer serializer;
     private final boolean isDebug;
     private final int producerBatchSz;
-    private int currBatchSz = 0;
+    private int remotesBatchSz = 0;
     private final Map<Integer,JCQueue> shortExecutorReceiveQueueMap;
     private final HashMap<Integer, JCQueue> outboundQueues;
 
@@ -61,14 +61,13 @@ public class ExecutorTransfer  {
             LOG.info("TRANSFERRING tuple {}", addressedTuple);
         }
 
-        if( workerData.isGoingToLocalWorker(serializer, addressedTuple) ) {
-            transferLocal(addressedTuple);
-        } else {
+        boolean isLocal = transferLocal(addressedTuple);
+        if (!isLocal) {
             cacheRemoteTuples(serializer, addressedTuple, remoteMap);
-            ++currBatchSz;
-            if(currBatchSz>=producerBatchSz) {
-                flushRemotes(); // TODO: Roshan: flush needs to be called on timeout also
-                currBatchSz=0;
+            ++remotesBatchSz;
+            if(remotesBatchSz >=producerBatchSz) {
+                flushRemotes();
+                remotesBatchSz =0;
             }
         }
     }
@@ -86,12 +85,18 @@ public class ExecutorTransfer  {
         remoteMap.get(destTask).add(new TaskMessage(destTask, serializer.serialize(tuple.getTuple())));
     }
 
+    // flushes local and remote messages
     public void flush() throws InterruptedException {
         flushLocal();
         flushRemotes();
     }
 
-    // flushes local and remote maps
+    private void flushLocal() throws InterruptedException {
+        for (JCQueue queue : outboundQueues.values()) {
+            queue.flush();
+        }
+    }
+
     private void flushRemotes() throws InterruptedException {
         if (!remoteMap.isEmpty()) {
             workerData.flushRemotes(remoteMap);
@@ -99,21 +104,14 @@ public class ExecutorTransfer  {
         }
     }
 
-    public void transferLocal(AddressedTuple tuple) throws InterruptedException {
-        JCQueue queue = outboundQueues.get(tuple.dest);
-        if (queue==null) {
-            queue = shortExecutorReceiveQueueMap.get(tuple.dest);
-            outboundQueues.put(tuple.dest, queue);
-        }
+    public boolean transferLocal(AddressedTuple tuple) throws InterruptedException {
+        workerData.checkSerialize(serializer, tuple);
+        JCQueue queue = shortExecutorReceiveQueueMap.get(tuple.dest);
+        if (queue==null)
+            return false;
         queue.publish(tuple);
+        outboundQueues.put(tuple.dest, queue);
+        return true;
     }
-
-    public void flushLocal() throws InterruptedException {
-        for (JCQueue queue : outboundQueues.values()) {
-            queue.flush();
-        }
-    }
-
-
 
 }

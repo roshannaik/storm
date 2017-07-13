@@ -29,13 +29,13 @@ public class ThroughputMeter {
     private int count;
     private long endTime = 0;
     private int times=0;
-    private Logger LOG;
+//    private Logger LOG;
     private int printFreq;
     private boolean disable;
 
     public ThroughputMeter(String name, int printFreq, boolean disable) {
         this.name = name;
-        LOG = LoggerFactory.getLogger(name);
+//        LOG = LoggerFactory.getLogger(name);
         this.printFreq = printFreq;
         this.disable = disable;
         this.startTime = System.currentTimeMillis();
@@ -70,7 +70,7 @@ public class ThroughputMeter {
         long currTime = (endTime==0) ? System.currentTimeMillis() : endTime ;
 
         long result = throughput(count, startTime, currTime) / 1000; // K/sec
-        LOG.error("====> {} : {} K/sec", name, result);
+//        LOG.error("====> {} : {} K/sec", name, result);
         System.err.printf("%s - %s : %,d K/sec\n", name, Thread.currentThread().getName(), result);
         startTime = currTime;
         count=0;
@@ -78,11 +78,9 @@ public class ThroughputMeter {
     }
 
     /** @return  events/sec    */
-    private static long throughput(int count, long startTime, long endTime) {
+    private static long throughput(long count, long startTime, long endTime) {
         long gap = (endTime-startTime);
-//        if(gap==0)
-
-        return count / (gap / 1000);
+        return (count / gap) * 1000;
     }
 
 }
