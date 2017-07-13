@@ -39,12 +39,13 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 
 public class BoltExecutor extends Executor {
 
     private static final Logger LOG = LoggerFactory.getLogger(BoltExecutor.class);
 
-    private final Callable<Boolean> executeSampler;
+    private final BooleanSupplier executeSampler;
     private final boolean isSystemBoltExecutor;
     private BoltOutputCollectorImpl outputCollector;
 
@@ -90,17 +91,17 @@ public class BoltExecutor extends Executor {
     }
 
     @Override
-    public Callable<Object> call() throws Exception {
+    public Callable<Long> call() throws Exception {
         init(idToTask);
 
-        return new Callable<Object>() {
+        return new Callable<Long>() {
 //            RunningStat latency = new RunningStat("ACK Bolt full latency");
             RunningStat avgConsumeCount = new RunningStat("BOLT Avg consume count", 10_000_000, true);
             @Override
-            public Object call() throws Exception {
+            public Long call() throws Exception {
 //                long start = System.currentTimeMillis();
                 int count = receiveQueue.consume(BoltExecutor.this);
-                long parkTimeNanoSec = isSystemBoltExecutor ? 50_000_000 : 1;
+                long parkTimeNanoSec = isSystemBoltExecutor ? 5_000_000 : 1;
                 if(count==0)
                     LockSupport.parkNanos(parkTimeNanoSec);
 //                latency.pushLatency(start);
@@ -117,17 +118,17 @@ public class BoltExecutor extends Executor {
         String streamId = tuple.getSourceStreamId();
         if (Constants.SYSTEM_FLUSH_STREAM_ID.equals(streamId)) {
             outputCollector.flush();
+        } else if (Constants.METRICS_TICK_STREAM_ID.equals(streamId)) {
+            metricsTick(idToTask.get(taskId), tuple);
         } else if (Constants.CREDENTIALS_CHANGED_STREAM_ID.equals(streamId)) {
             Object taskObject = idToTask.get(taskId).getTaskObject();
             if (taskObject instanceof ICredentialsListener) {
                 ((ICredentialsListener) taskObject).setCredentials((Map<String, String>) tuple.getValue(0));
             }
-        } else if (Constants.METRICS_TICK_STREAM_ID.equals(streamId)) {
-            metricsTick(idToTask.get(taskId), tuple);
         } else {
             IBolt boltObject = (IBolt) idToTask.get(taskId).getTaskObject();
-            boolean isSampled = sampler.call();
-            boolean isExecuteSampler = executeSampler.call();
+            boolean isSampled = sampler.getAsBoolean();
+            boolean isExecuteSampler = executeSampler.getAsBoolean();
             Long now = (isSampled || isExecuteSampler) ? System.currentTimeMillis() : null;
             if (isSampled) {
                 tuple.setProcessSampleStartTime(now);
@@ -144,7 +145,7 @@ public class BoltExecutor extends Executor {
                 LOG.info("Execute done TUPLE {} TASK: {} DELTA: {}", tuple, taskId, delta);
             }
             TopologyContext topologyContext = idToTask.get(taskId).getUserContext();
-            if (!topologyContext.getHooks().isEmpty()) // perf critical. avoid unnecessary allocations
+            if (!topologyContext.getHooks().isEmpty()) // perf critical check to avoid unnecessary allocation
                 new BoltExecuteInfo(tuple, taskId, delta).applyOn(topologyContext);
             if (delta != 0) {
                 ((BoltExecutorStats) stats).boltExecuteTuple(tuple.getSourceComponent(), tuple.getSourceStreamId(), delta);

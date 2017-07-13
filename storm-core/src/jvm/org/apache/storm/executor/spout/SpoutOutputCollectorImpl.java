@@ -109,7 +109,6 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
 
     private List<Integer> sendSpoutMsg(String stream, List<Object> values, Object messageId, Integer outTaskId) throws InterruptedException {
         emittedCount.increment();
-
         List<Integer> outTasks;
         if (outTaskId != null) {
             outTasks = taskData.getOutgoingTasks(outTaskId, stream, values);
@@ -117,60 +116,57 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
             outTasks = taskData.getOutgoingTasks(stream, values);
         }
 
-        boolean needAck = (messageId != null) && hasAckers;
+            final boolean needAck = (messageId != null) && hasAckers;
 
-        List<Long> ackSeq = needAck ? new ArrayList<>() : null;
+            final List<Long> ackSeq = needAck ? new ArrayList<>() : null;
 
-        long rootId = needAck ? MessageId.generateId(random) : 0;
-        for (int i = 0; i < outTasks.size(); i++) { // perf critical loop. dont use iterators.
-            Integer t = outTasks.get(i);
-            MessageId msgId;
+            final long rootId = needAck ? MessageId.generateId(random) : 0;
+
+            for (int i = 0; i < outTasks.size(); i++) { // perf critical path. don't use iterators.
+                Integer t = outTasks.get(i);
+                MessageId msgId;
+                if (needAck) {
+                    long as = MessageId.generateId(random);
+                    msgId = MessageId.makeRootId(rootId, as);
+                    ackSeq.add(as);
+                } else {
+                    msgId = MessageId.makeUnanchored();
+                }
+
+                final TupleImpl tuple = new TupleImpl(executor.getWorkerTopologyContext(), values, executor.getComponentId(), this.taskId, stream, msgId);
+                executor.getExecutorTransfer().transfer(t, tuple); // TODO: Roshan: This is also limiting emit() throughput rate to 7mill/sec
+            }
+            if (isEventLoggers) {
+                taskData.sendToEventLogger(executor, values, executor.getComponentId(), messageId, random);
+            }
+
             if (needAck) {
-                long as = MessageId.generateId(random);
-                msgId = MessageId.makeRootId(rootId, as);
-                ackSeq.add(as);
-            } else {
-                msgId = MessageId.makeUnanchored();
+                boolean sample = executor.samplerCheck();
+                TupleInfo info = new TupleInfo();
+                info.setTaskId(this.taskId);
+                info.setStream(stream);
+                info.setMessageId(messageId);
+                if (isDebug) {
+                    info.setValues(values);
+                }
+                if (sample) {
+                    info.setTimestamp(System.currentTimeMillis());
+                }
+
+                pending.put(rootId, info);
+                List<Object> ackInitTuple = new Values(rootId, Utils.bitXorVals(ackSeq), this.taskId);
+                taskData.sendUnanchored(Acker.ACKER_INIT_STREAM_ID, ackInitTuple, executor.getExecutorTransfer());
+            } else if (messageId != null) {
+                // Reusing TupleInfo object as we directly call executor.ackSpoutMsg() & are not sending msgs. perf critical
+                globalTupleInfo.clear();
+                globalTupleInfo.setStream(stream);
+                globalTupleInfo.setValues(values);
+                globalTupleInfo.setMessageId(messageId);
+                globalTupleInfo.setTimestamp(0);
+                globalTupleInfo.setId("0:");
+                Long timeDelta = 0L;
+                executor.ackSpoutMsg(executor, taskData, timeDelta, globalTupleInfo);
             }
-
-            TupleImpl tuple = new TupleImpl(executor.getWorkerTopologyContext(), values, this.taskId, stream, msgId); //TODO: Roshan: This is expensive. Limits emit() rate to 7.5 mill/sec (15 mill/sec without it)
-            executor.getExecutorTransfer().transfer(t, tuple); // TODO: Roshan: This is also limiting emit() rate to 7.5mill/sec
-        }
-        if (isEventLoggers) {
-            taskData.sendToEventLogger(executor, values, executor.getComponentId(), messageId, random);
-        }
-
-        boolean sample = false;
-        try {
-            sample = executor.getSampler().call();
-        } catch (Exception ignored) {
-        }
-        if (needAck) {
-            TupleInfo info = new TupleInfo();
-            info.setTaskId(this.taskId);
-            info.setStream(stream);
-            info.setMessageId(messageId);
-            if (isDebug) {
-                info.setValues(values);
-            }
-            if (sample) {
-                info.setTimestamp(System.currentTimeMillis());
-            }
-
-            pending.put(rootId, info);
-            List<Object> ackInitTuple = new Values(rootId, Utils.bitXorVals(ackSeq), this.taskId);
-            taskData.sendUnanchored(Acker.ACKER_INIT_STREAM_ID, ackInitTuple, executor.getExecutorTransfer());
-        } else if (messageId != null) { // here TupleInfo object can be reused as we are directly calling executor.ackSpoutMsg() & not sending msgs. perf critical
-            globalTupleInfo.clear();
-            globalTupleInfo.setStream(stream);
-            globalTupleInfo.setValues(values);
-            globalTupleInfo.setMessageId(messageId);
-            globalTupleInfo.setTimestamp(0);
-            Long timeDelta = sample ? 0L : null;
-            globalTupleInfo.setId("0:");
-            executor.ackSpoutMsg(executor, taskData, timeDelta, globalTupleInfo);
-        }
-
         return outTasks;
     }
 }

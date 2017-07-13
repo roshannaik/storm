@@ -34,29 +34,42 @@ import clojure.lang.Seqable;
 import clojure.lang.Symbol;
 import java.util.List;
 
-public class TupleImpl extends IndifferentAccessMap implements Seqable, Indexed, IMeta, Tuple {
+public class TupleImpl  implements Seqable, Indexed, IMeta, Tuple {
+    private final String srcComponent;
     private List<Object> values;
     private int taskId;
     private String streamId;
     private GeneralTopologyContext context;
     private MessageId id;
     private IPersistentMap _meta;
-    
+
+    public TupleImpl(GeneralTopologyContext context, List<Object> values, String srcComponent, int taskId, String streamId, MessageId id) {
+        this.values = values;
+        this.taskId = taskId;
+        this.streamId = streamId;
+        this.id = id;
+        this.context = context;
+        this.srcComponent = srcComponent;
+    }
+
+    //TODO: Roshan: eliminate this constructor. context.getComponentId(taskId) call in critical path is expensive.
     public TupleImpl(GeneralTopologyContext context, List<Object> values, int taskId, String streamId, MessageId id) {
         this.values = values;
         this.taskId = taskId;
         this.streamId = streamId;
         this.id = id;
         this.context = context;
-        
-        String componentId = context.getComponentId(taskId);
-        Fields schema = context.getComponentOutputFields(componentId, streamId);
-        if(values.size()!=schema.size()) {
-            throw new IllegalArgumentException(
-                    "Tuple created with wrong number of fields. " +
-                    "Expected " + schema.size() + " fields but got " +
-                    values.size() + " fields");
-        }
+        this.srcComponent = context.getComponentId(taskId);
+
+//// TODO: Disabling these checks as they are a throughput bottleneck
+//        String componentId = context.getComponentId(taskId);
+//        Fields schema = context.getComponentOutputFields(componentId, streamId);
+//        if(values.size()!=schema.size()) {
+//            throw new IllegalArgumentException(
+//                    "Tuple created with wrong number of fields. " +
+//                    "Expected " + schema.size() + " fields but got " +
+//                    values.size() + " fields");
+//        }
     }
 
     public TupleImpl(GeneralTopologyContext context, List<Object> values, int taskId, String streamId) {
@@ -207,7 +220,7 @@ public class TupleImpl extends IndifferentAccessMap implements Seqable, Indexed,
     }
     
     public String getSourceComponent() {
-        return context.getComponentId(taskId);
+        return srcComponent;
     }
     
     public int getSourceTask() {
@@ -239,20 +252,6 @@ public class TupleImpl extends IndifferentAccessMap implements Seqable, Indexed,
 
     private Keyword makeKeyword(String name) {
         return Keyword.intern(Symbol.create(name));
-    }    
-
-    /* ILookup */
-    @Override
-    public Object valAt(Object o) {
-        try {
-            if(o instanceof Keyword) {
-                return getValueByField(((Keyword) o).getName());
-            } else if(o instanceof String) {
-                return getValueByField((String) o);
-            }
-        } catch(IllegalArgumentException ignored) {
-        }
-        return null;
     }
 
     /* Seqable */
@@ -335,22 +334,4 @@ public class TupleImpl extends IndifferentAccessMap implements Seqable, Indexed,
         }
         return _meta;
     }
-
-    private PersistentArrayMap toMap() {
-        Object array[] = new Object[values.size()*2];
-        List<String> fields = getFields().toList();
-        for(int i=0; i < values.size(); i++) {
-            array[i*2] = fields.get(i);
-            array[(i*2)+1] = values.get(i);
-        }
-        return new PersistentArrayMap(array);
-    }
-
-    public IPersistentMap getMap() {
-        if(_map==null) {
-            setMap(toMap());
-        }
-        return _map;
-    }    
-    
 }

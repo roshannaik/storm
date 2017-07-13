@@ -57,7 +57,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.Callable;
+import java.util.function.BooleanSupplier;
 
 public class Task {
 
@@ -73,7 +73,7 @@ public class Task {
     private String componentId;
     private Object taskObject; // Spout/Bolt object
     private Map stormConf;
-    private Callable<Boolean> emitSampler;
+    private BooleanSupplier emitSampler;
     private CommonStats executorStats;
     private Map<String, Map<String, LoadAwareCustomStreamGrouping>> streamComponentToGrouper;
     private BuiltinMetrics builtInMetrics;
@@ -113,7 +113,7 @@ public class Task {
         }
         new EmitInfo(values, stream, taskId, Collections.singletonList(outTaskId)).applyOn(userTopologyContext);
         try {
-            if (emitSampler.call()) {
+            if (emitSampler.getAsBoolean()) {
                 executorStats.emittedTuple(stream);
                 if (null != outTaskId) {
                     executorStats.transferredTuples(stream, 1);
@@ -153,7 +153,7 @@ public class Task {
         if(!userTopologyContext.getHooks().isEmpty())
             new EmitInfo(values, stream, taskId, outTasks).applyOn(userTopologyContext);
         try {
-            if (emitSampler.call()) {
+            if (emitSampler.getAsBoolean()) {
                 executorStats.emittedTuple(stream);
                 executorStats.transferredTuples(stream, outTasks.size());
             }

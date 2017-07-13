@@ -69,6 +69,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Callable;
+import java.util.function.BooleanSupplier;
 
 public abstract class Executor implements Callable, JCQueue.Consumer {
 
@@ -93,7 +94,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     protected final Map<Integer, Map<Integer, Map<String, IMetric>>> intervalToTaskToMetricToRegistry;
     protected final Map<String, Map<String, LoadAwareCustomStreamGrouping>> streamToComponentToGrouper;
     protected final ReportErrorAndDie reportErrorDie;
-    protected final Callable<Boolean> sampler;
+    protected final BooleanSupplier sampler;
     protected ExecutorTransfer executorTransfer;
     protected final String type;
 
@@ -185,7 +186,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         for (Integer taskId : taskIds) {
             try {
                 Task task = new Task(executor, taskId);
-                task.sendUnanchored( StormCommon.SYSTEM_STREAM_ID, new Values("startup"), executor.getExecutorTransfer());
+                task.sendUnanchored( StormCommon.SYSTEM_STREAM_ID, new Values("startup"), executor.getExecutorTransfer()); // TODO: Roshan: does this get delivered/handled anywhere ?
                 idToTask.put(taskId, task);
             } catch (IOException ex) {
                 throw Utils.wrapInRuntime(ex);
@@ -483,8 +484,8 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         return workerTopologyContext;
     }
 
-    public Callable<Boolean> getSampler() {
-        return sampler;
+    public boolean samplerCheck() {
+        return sampler.getAsBoolean();
     }
 
     public AtomicReference<Map<String, DebugOptions>> getStormComponentDebug() {

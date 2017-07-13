@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.function.BooleanSupplier;
 
 public class ConfigUtils {
     private final static Logger LOG = LoggerFactory.getLogger(ConfigUtils.class);
@@ -134,15 +135,15 @@ public class ConfigUtils {
         throw new IllegalArgumentException("Illegal topology.stats.sample.rate in conf: " + rate);
     }
 
-    public static Callable<Boolean> evenSampler(final int samplingFreq) {
+    public static BooleanSupplier evenSampler(final int samplingFreq) {
         final Random random = new Random();
 
-        return new Callable<Boolean>() {
+        return new BooleanSupplier() {
             private int curr = -1;
             private int target = random.nextInt(samplingFreq);
 
             @Override
-            public Boolean call() throws Exception {
+            public boolean getAsBoolean() {
                 curr++;
                 if (curr >= samplingFreq) {
                     curr = 0;
@@ -153,7 +154,7 @@ public class ConfigUtils {
         };
     }
 
-    public static Callable<Boolean> mkStatsSampler(Map conf) {
+    public static BooleanSupplier mkStatsSampler(Map conf) {
         return evenSampler(samplingRate(conf));
     }
 
