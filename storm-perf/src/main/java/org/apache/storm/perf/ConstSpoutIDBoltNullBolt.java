@@ -67,13 +67,13 @@ public class ConstSpoutIDBoltNullBolt {
     }
 
     /**
-     * ConstSpout -> DevNull Bolt
+     * ConstSpout -> IDBolt -> DevNull Bolt
      */
     public static void main(String[] args) throws Exception {
         if(args.length <= 0) {
             // submit topology to local cluster
             Config conf = new Config();
-            conf.setNumAckers(0);
+            conf.setNumAckers(1);
             int printFreq = 15_000_000;
 //            int printFreq = 6_000_000;
 
