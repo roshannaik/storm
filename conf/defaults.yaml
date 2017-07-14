@@ -235,8 +235,6 @@ topology.builtin.metrics.bucket.size.secs: 60
 topology.fall.back.on.java.serialization: true
 topology.worker.childopts: null
 topology.worker.logwriter.childopts: "-Xmx64m"
-topology.executor.receive.buffer.size: 16384 #batched
-topology.transfer.buffer.size: 16384 # batched
 topology.tick.tuple.freq.secs: null
 topology.worker.shared.thread.pool.size: 4
 topology.spout.wait.strategy: "org.apache.storm.spout.SleepSpoutWaitStrategy"
@@ -251,8 +249,11 @@ topology.classpath: null
 topology.environment: null
 topology.bolts.outgoing.overflow.buffer.enable: false
 topology.disruptor.wait.timeout.millis: 1000  # TODO: Roshan: not used, but we may/not want this behavior
+topology.executor.receive.buffer.size: 50000
+topology.transfer.buffer.size: 16384 # batched
 topology.producer.batch.size: 10000
 topology.flush.tuple.freq.millis : 5000
+
 
 topology.disable.loadaware.messaging: true
 topology.state.checkpoint.interval.ms: 1000
