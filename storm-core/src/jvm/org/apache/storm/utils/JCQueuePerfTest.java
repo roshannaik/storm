@@ -23,8 +23,8 @@ import java.util.concurrent.locks.LockSupport;
 public class JCQueuePerfTest {
 
     public static void main(String[] args) throws Exception {
-        oneProducer1Consumer(1000);
-//        twoProducer1Consumer(1000);
+//        oneProducer1Consumer(1000);
+        twoProducer1Consumer(2000);
 //        threeProducer1Consumer(1);
 
 //        oneProducer2Consumers();

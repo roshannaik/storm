@@ -62,7 +62,7 @@ public class SpoutOutputCollector implements ISpoutOutputCollector {
      * @return the list of task ids that this tuple was sent to
      */
     public List<Integer> emit(List<Object> tuple, Object messageId) {
-        return emit(Utils.DEFAULT_STREAM_ID, tuple, messageId);
+        return _delegate.emit(Utils.DEFAULT_STREAM_ID, tuple, messageId);
     }
 
     /**

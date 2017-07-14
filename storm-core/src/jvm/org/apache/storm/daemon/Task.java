@@ -164,7 +164,7 @@ public class Task {
     }
 
     public Tuple getTuple(String stream, List values) {
-        return new TupleImpl(systemTopologyContext, values, systemTopologyContext.getThisTaskId(), stream);
+        return new TupleImpl(systemTopologyContext, values, executor.getComponentId(), systemTopologyContext.getThisTaskId(), stream);
     }
 
     public Integer getTaskId() {

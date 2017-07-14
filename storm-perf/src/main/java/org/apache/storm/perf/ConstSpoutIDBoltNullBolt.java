@@ -73,7 +73,7 @@ public class ConstSpoutIDBoltNullBolt {
         if(args.length <= 0) {
             // submit topology to local cluster
             Config conf = new Config();
-            conf.setNumAckers(1);
+            conf.setNumAckers(0);
             int printFreq = 15_000_000;
 //            int printFreq = 6_000_000;
 

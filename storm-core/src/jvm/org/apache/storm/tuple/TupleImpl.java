@@ -50,20 +50,9 @@ public class TupleImpl  implements Seqable, Indexed, IMeta, Tuple {
         this.id = id;
         this.context = context;
         this.srcComponent = srcComponent;
-    }
 
-    //TODO: Roshan: eliminate this constructor. context.getComponentId(taskId) call in critical path is expensive.
-    public TupleImpl(GeneralTopologyContext context, List<Object> values, int taskId, String streamId, MessageId id) {
-        this.values = values;
-        this.taskId = taskId;
-        this.streamId = streamId;
-        this.id = id;
-        this.context = context;
-        this.srcComponent = context.getComponentId(taskId);
-
-//// TODO: Disabling these checks as they are a throughput bottleneck
-//        String componentId = context.getComponentId(taskId);
-//        Fields schema = context.getComponentOutputFields(componentId, streamId);
+//// Note: Disabling these checks as they are a throughput bottleneck
+//        Fields schema = context.getComponentOutputFields(srcComponent, streamId);
 //        if(values.size()!=schema.size()) {
 //            throw new IllegalArgumentException(
 //                    "Tuple created with wrong number of fields. " +
@@ -72,8 +61,8 @@ public class TupleImpl  implements Seqable, Indexed, IMeta, Tuple {
 //        }
     }
 
-    public TupleImpl(GeneralTopologyContext context, List<Object> values, int taskId, String streamId) {
-        this(context, values, taskId, streamId, MessageId.makeUnanchored());
+    public TupleImpl(GeneralTopologyContext context, List<Object> values, String srcComponent, int taskId, String streamId) {
+        this(context, values, srcComponent, taskId, streamId, MessageId.makeUnanchored());
     }    
     
     Long _processSampleStartTime;

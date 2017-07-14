@@ -297,7 +297,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
             timerTask.scheduleRecurring(interval, interval, new Runnable() {
                 @Override
                 public void run() {
-                    TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(interval),
+                    TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(interval), Constants.SYSTEM_COMPONENT_ID,
                             (int) Constants.SYSTEM_TASK_ID, Constants.METRICS_TICK_STREAM_ID);
                     AddressedTuple metricsTickTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
                     try {
@@ -325,7 +325,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
                     @Override
                     public void run() {
                         TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(tickTimeSecs),
-                                (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_TICK_STREAM_ID);
+                                Constants.SYSTEM_COMPONENT_ID, (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_TICK_STREAM_ID);
                         AddressedTuple tickTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
                         try {
                             receiveQueue.publish(tickTuple);
@@ -343,7 +343,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
 
     // Called by flush-tuple-timer thread
     public boolean publishFlushTuple() {
-        TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(),
+        TupleImpl tuple = new TupleImpl(workerTopologyContext, new Values(), Constants.SYSTEM_COMPONENT_ID,
                 (int) Constants.SYSTEM_TASK_ID, Constants.SYSTEM_FLUSH_STREAM_ID);
         AddressedTuple flushTuple = new AddressedTuple(AddressedTuple.BROADCAST_DEST, tuple);
         if( receiveQueue.tryPublish(flushTuple) ) {

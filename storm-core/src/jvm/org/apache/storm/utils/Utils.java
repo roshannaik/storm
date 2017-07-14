@@ -2230,9 +2230,9 @@ public class Utils {
             public void run() {
 
                 try {
-                    Callable<Long> fn = isFactory ? (Callable<Long>) afn.call() : afn;
+                    final Callable<Long> fn = isFactory ? (Callable<Long>) afn.call() : afn;
                     while (true) {
-                        Long s = fn.call();
+                        final Long s = fn.call();
                         if (s==null) // then stop running it
                             break;
                         if (s>0)

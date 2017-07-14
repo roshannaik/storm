@@ -79,7 +79,7 @@ public class WindowedBoltExecutorTest {
     }
 
     private Tuple getTuple(String streamId, final Fields fields, Values values) {
-        return new TupleImpl(getContext(fields), values, 1, streamId) {
+        return new TupleImpl(getContext(fields), values, "testSrc", 1, streamId) {
             @Override
             public GlobalStreamId getSourceGlobalStreamId() {
                 return new GlobalStreamId("s1", "default");

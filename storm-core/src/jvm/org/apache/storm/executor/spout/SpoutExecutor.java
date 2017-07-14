@@ -126,17 +126,16 @@ public class SpoutExecutor extends Executor {
     @Override
     public Callable<Long> call() throws Exception {
         init(idToTask);
-        RunningStat spoutConsCount = new RunningStat("Spout Avg consume count", 20_000_000, true);
         return new Callable<Long>() {
             int i = 0;
+            final RunningStat spoutConsCount = new RunningStat("Spout Avg consume count", 20_000_000, true);
             @Override
             public Long call() throws Exception {
-                long start = System.currentTimeMillis();
                 if( i==0 ) {
                    int x = receiveQueue.consume(SpoutExecutor.this);
                    spoutConsCount.push(x);
                 }
-                if(++i==8) i=0;
+                if(++i==8) i=0;  //TODO: Roshan: remove this
 
                 long currCount = emittedCount.get();
                 boolean reachedMaxSpoutPending = (maxSpoutPending != 0) && (pending.size() >= maxSpoutPending);
