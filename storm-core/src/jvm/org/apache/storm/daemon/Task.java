@@ -32,10 +32,8 @@ import org.apache.storm.generated.ShellComponent;
 import org.apache.storm.generated.SpoutSpec;
 import org.apache.storm.generated.StateSpoutSpec;
 import org.apache.storm.generated.StormTopology;
-import org.apache.storm.grouping.CustomStreamGrouping;
 import org.apache.storm.grouping.LoadAwareCustomStreamGrouping;
 import org.apache.storm.grouping.LoadMapping;
-import org.apache.storm.grouping.ShuffleGrouping;
 import org.apache.storm.hooks.ITaskHook;
 import org.apache.storm.hooks.info.EmitInfo;
 import org.apache.storm.spout.ShellSpout;
@@ -54,8 +52,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Random;
 import java.util.function.BooleanSupplier;
 
@@ -76,6 +76,7 @@ public class Task {
     private BooleanSupplier emitSampler;
     private CommonStats executorStats;
     private Map<String, Map<String, LoadAwareCustomStreamGrouping>> streamComponentToGrouper;
+    private HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> streamToGroupers;
     private BuiltinMetrics builtInMetrics;
     private boolean debug;
 
@@ -86,6 +87,7 @@ public class Task {
         this.stormConf = executor.getStormConf();
         this.componentId = executor.getComponentId();
         this.streamComponentToGrouper = executor.getStreamToComponentToGrouper();
+        this.streamToGroupers = getGroupersPerStream(streamComponentToGrouper);
         this.executorStats = executor.getStats();
         this.builtInMetrics = BuiltinMetricsUtil.mkData(executor.getType(), this.executorStats);
         this.workerTopologyContext = executor.getWorkerTopologyContext();
@@ -137,17 +139,17 @@ public class Task {
         ArrayList<Integer> outTasks = new ArrayList<>();
 
         // TODO: PERF: expensive hashtable lookup in critical path
-        Map<String, LoadAwareCustomStreamGrouping> streamGroupings = streamComponentToGrouper.get(stream);
-        if (null != streamGroupings) {
-            // null value for __system
-            for (LoadAwareCustomStreamGrouping grouper : streamGroupings.values()) {
+        ArrayList<LoadAwareCustomStreamGrouping> groupers = streamToGroupers.get(stream);
+        if (null != groupers)  {
+            for (int i=0; i<groupers.size(); ++i) {
+                LoadAwareCustomStreamGrouping grouper = groupers.get(i);
                 if (grouper == GrouperFactory.DIRECT) {
                     throw new IllegalArgumentException("Cannot do regular emit to direct stream");
                 }
                 List<Integer> compTasks = grouper.chooseTasks(taskId, values, loadMapping);
-                outTasks.addAll(compTasks);
+                outTasks.addAll(compTasks);   // TODO: PERF: this is a perf hit
             }
-        } else if (!streamComponentToGrouper.containsKey(stream)) {
+        } else {
             throw new IllegalArgumentException("Unknown stream ID: " + stream);
         }
 
@@ -285,6 +287,24 @@ public class Task {
             }
         }
     }
+
+    private static HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> getGroupersPerStream(Map<String, Map<String, LoadAwareCustomStreamGrouping>> streamComponentToGrouper) {
+        HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> result = new HashMap<>(streamComponentToGrouper.size());
+
+        for(Entry<String, Map<String, LoadAwareCustomStreamGrouping>> entry : streamComponentToGrouper.entrySet()) {
+            String stream = entry.getKey();
+            Map<String, LoadAwareCustomStreamGrouping> groupers = entry.getValue();
+            ArrayList<LoadAwareCustomStreamGrouping> perStreamGroupers = new ArrayList<>();
+            if (groupers != null) { // null for __system bolt
+                for (LoadAwareCustomStreamGrouping grouper : groupers.values()) {
+                    perStreamGroupers.add(grouper);
+                }
+            }
+            result.put(stream, perStreamGroupers);
+        }
+        return result;
+    }
+
 
     @Override
     public String toString() {

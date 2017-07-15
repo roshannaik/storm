@@ -251,7 +251,7 @@ topology.bolts.outgoing.overflow.buffer.enable: false
 topology.disruptor.wait.timeout.millis: 1000  # TODO: Roshan: not used, but we may/not want this behavior
 topology.executor.receive.buffer.size: 50000
 topology.transfer.buffer.size: 16384 # batched
-topology.producer.batch.size: 2000
+topology.producer.batch.size: 1000
 topology.flush.tuple.freq.millis : 5000
 
 
