@@ -2330,22 +2330,17 @@ public class Utils {
         return rtn;
     }
 
-    /**
-     * converts a clojure PersistentMap to java HashMap
-     */
-    public static Map<String, Object> convertClojureMapToJavaMap(Map map) {
-        Map<String, Object> ret = new HashMap<>(map.size());
-        for (Object obj : map.entrySet()) {
-            Map.Entry entry = (Map.Entry) obj;
-            Keyword keyword = (Keyword) entry.getKey();
-            String key = keyword.getName();
-            if (key.startsWith(":")) {
-                key = key.substring(1, key.length());
-            }
-            Object value = entry.getValue();
-            ret.put(key, value);
-        }
 
-        return ret;
+    public static <V> ArrayList<V> convertToArray(Map<Integer, V> srcMap) {
+        Set<Integer> executorIds = srcMap.keySet();
+        Integer largestId = executorIds.stream().max(Integer::compareTo).get();
+//        Integer smallestId = executorIds.stream().min(Integer::compareTo).get();
+        ArrayList<V> result = new ArrayList<V>(Collections.nCopies(
+                    srcMap.keySet().stream().max(Integer::compareTo).get() +1 , null));
+        for( Map.Entry<Integer, V> entry : srcMap.entrySet() ) {
+            if (entry.getKey() >= 0) // don't need __system bolt (id=-1) here
+                result.set(entry.getKey(),  entry.getValue());
+        }
+        return result;
     }
 }

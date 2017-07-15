@@ -135,10 +135,8 @@ public class Task {
         }
 
         ArrayList<Integer> outTasks = new ArrayList<>();
-        // TODO:  Roshan: this check may be expensive due to global sharing ?
-        if (!streamComponentToGrouper.containsKey(stream)) {
-            throw new IllegalArgumentException("Unknown stream ID: " + stream);
-        }
+
+        // TODO: PERF: expensive hashtable lookup in critical path
         Map<String, LoadAwareCustomStreamGrouping> streamGroupings = streamComponentToGrouper.get(stream);
         if (null != streamGroupings) {
             // null value for __system
@@ -149,7 +147,10 @@ public class Task {
                 List<Integer> compTasks = grouper.chooseTasks(taskId, values, loadMapping);
                 outTasks.addAll(compTasks);
             }
+        } else if (!streamComponentToGrouper.containsKey(stream)) {
+            throw new IllegalArgumentException("Unknown stream ID: " + stream);
         }
+
         if(!userTopologyContext.getHooks().isEmpty())
             new EmitInfo(values, stream, taskId, outTasks).applyOn(userTopologyContext);
         try {
@@ -283,5 +284,10 @@ public class Task {
                 }
             }
         }
+    }
+
+    @Override
+    public String toString() {
+        return taskId.toString();
     }
 }

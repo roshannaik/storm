@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,19 +42,20 @@ public class ExecutorTransfer  {
     private final boolean isDebug;
     private final int producerBatchSz;
     private int remotesBatchSz = 0;
-    private final Map<Integer,JCQueue> shortExecutorReceiveQueueMap;
-    private final HashMap<Integer, JCQueue> outboundQueues;
+    private final ArrayList<JCQueue> shortExecutorReceiveQueueMap; // using arrays instead of hashmap for perf reasons
+    private final ArrayList<JCQueue> outboundQueues;
 
-    HashMap<Integer, List<TaskMessage>> remoteMap  = new HashMap<>();
+    final HashMap<Integer, List<TaskMessage>> remoteMap  = new HashMap<>();
 
     public ExecutorTransfer(WorkerState workerData, Map stormConf) {
         this.workerData = workerData;
         this.serializer = new KryoTupleSerializer(stormConf, workerData.getWorkerTopologyContext());
         this.isDebug = Utils.getBoolean(stormConf.get(Config.TOPOLOGY_DEBUG), false);
         this.producerBatchSz = Utils.getInt(stormConf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE));
-        this.shortExecutorReceiveQueueMap = workerData.getShortExecutorReceiveQueueMap();
-        this.outboundQueues = new HashMap<>();
+        this.shortExecutorReceiveQueueMap = Utils.convertToArray(workerData.getShortExecutorReceiveQueueMap());
+        this.outboundQueues = new ArrayList<JCQueue>(Collections.nCopies(shortExecutorReceiveQueueMap.size(), null) );
     }
+
 
     public void transfer(int task, Tuple tuple) throws InterruptedException {
         AddressedTuple addressedTuple = new AddressedTuple(task, tuple);
@@ -92,8 +94,10 @@ public class ExecutorTransfer  {
     }
 
     private void flushLocal() throws InterruptedException {
-        for (JCQueue queue : outboundQueues.values()) {
-            queue.flush();
+        for (int i = 0; i < shortExecutorReceiveQueueMap.size(); i++) {
+            JCQueue q = shortExecutorReceiveQueueMap.get(i);
+            if(q!=null)
+                q.flush();
         }
     }
 
@@ -110,7 +114,7 @@ public class ExecutorTransfer  {
         if (queue==null)
             return false;
         queue.publish(tuple);
-        outboundQueues.put(tuple.dest, queue);
+        outboundQueues.set(tuple.dest, queue);
         return true;
     }
 

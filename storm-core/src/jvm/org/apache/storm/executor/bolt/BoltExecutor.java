@@ -18,6 +18,8 @@
 package org.apache.storm.executor.bolt;
 
 import com.google.common.collect.ImmutableMap;
+
+import java.util.ArrayList;
 import java.util.List;
 import org.apache.storm.Constants;
 import org.apache.storm.ICredentialsListener;
@@ -28,7 +30,6 @@ import org.apache.storm.executor.Executor;
 import org.apache.storm.hooks.info.BoltExecuteInfo;
 import org.apache.storm.stats.BoltExecutorStats;
 import org.apache.storm.task.IBolt;
-import org.apache.storm.task.IOutputCollector;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.TupleImpl;
@@ -55,14 +56,16 @@ public class BoltExecutor extends Executor {
         isSystemBoltExecutor =  (executorId == Constants.SYSTEM_EXECUTOR_ID );
     }
 
-    public void init(Map<Integer, Task> idToTask) {
+    public void init(ArrayList<Task> idToTask) {
         while (!stormActive.get()) {
             Utils.sleep(100);
         }
 
-        LOG.info("Preparing bolt {}:{}", componentId, idToTask.keySet());
-        for (Map.Entry<Integer, Task> entry : idToTask.entrySet()) {
-            Task taskData = entry.getValue();
+        LOG.info("Preparing bolt {}:{}", componentId, getTaskIds() );
+        for (int i=0; i<idToTask.size(); ++i) {
+            Task taskData = idToTask.get(i);
+            if(taskData==null)
+                continue;
             IBolt boltObject = (IBolt) taskData.getTaskObject();
             TopologyContext userContext = taskData.getUserContext();
             taskData.getBuiltInMetrics().registerAll(stormConf, userContext);
@@ -74,7 +77,7 @@ public class BoltExecutor extends Executor {
                         "transfer", workerData.getTransferQueue());
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
 
-                Map cachedNodePortToSocket = (Map) workerData.getCachedNodeToPortSocket().get();
+                Map cachedNodePortToSocket = workerData.getCachedNodeToPortSocket().get();
                 BuiltinMetricsUtil.registerIconnectionClientMetrics(cachedNodePortToSocket, stormConf, userContext);
                 BuiltinMetricsUtil.registerIconnectionServerMetric(workerData.getReceiver(), stormConf, userContext);
             } else {
@@ -82,11 +85,11 @@ public class BoltExecutor extends Executor {
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
             }
 
-            this.outputCollector = new BoltOutputCollectorImpl(this, taskData, entry.getKey(), rand, hasEventLoggers, ackingEnabled, isDebug);
+            this.outputCollector = new BoltOutputCollectorImpl(this, taskData, i, rand, hasEventLoggers, ackingEnabled, isDebug);
             boltObject.prepare(stormConf, userContext, new OutputCollector(outputCollector));
         }
         openOrPrepareWasCalled.set(true);
-        LOG.info("Prepared bolt {}:{}", componentId, idToTask.keySet());
+        LOG.info("Prepared bolt {}:{}", componentId, taskIds);
         setupMetrics();
     }
 

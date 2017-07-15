@@ -259,8 +259,10 @@ public class Worker implements Shutdownable, DaemonCommon {
         workerState.flushTupleTimer.scheduleRecurringMs(flushIntervalMs, flushIntervalMs, new Runnable() {
             @Override
             public void run() {
-                for (IRunningExecutor exec : executors) {
-                    exec.getExecutor().publishFlushTuple();
+                for (int i = 0; i < executors.size(); i++) {
+                    IRunningExecutor exec = executors.get(i);
+                    if(exec.getExecutorId().get(0) != -1) // dont send to system bolt
+                        exec.getExecutor().publishFlushTuple();
                 }
             }
         });
@@ -284,8 +286,7 @@ public class Worker implements Shutdownable, DaemonCommon {
             stats = StatsUtil.mkEmptyExecutorZkHbs(workerState.executors);
         } else {
             stats = StatsUtil.convertExecutorZkHbs(executors.stream().collect(Collectors
-                .toMap((Function<IRunningExecutor, List<Long>>) IRunningExecutor::getExecutorId,
-                    (Function<IRunningExecutor, ExecutorStats>) IRunningExecutor::renderStats)));
+                .toMap(IRunningExecutor::getExecutorId, IRunningExecutor::renderStats)));
         }
         Map<String, Object> zkHB = StatsUtil.mkZkWorkerHb(workerState.topologyId, stats, workerState.uptime.upTime());
         try {

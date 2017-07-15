@@ -74,18 +74,19 @@ public class SpoutExecutor extends Executor {
         this.spoutThrottlingMetrics = new SpoutThrottlingMetrics();
     }
 
-    public void init(final Map<Integer, Task> idToTask) {
+    public void init(final ArrayList<Task> idToTask) {
         latencySampled = new RunningStat("[SAMPLED] Latency", 10_000_000);
         while (!stormActive.get()) {
             Utils.sleep(100);
         }
 
-        LOG.info("Opening spout {}:{}", componentId, idToTask.keySet());
+        LOG.info("Opening spout {}:{}", componentId, taskIds );
         this.idToTask = idToTask;
         this.maxSpoutPending = Utils.getInt(stormConf.get(Config.TOPOLOGY_MAX_SPOUT_PENDING), 0) * idToTask.size();
         this.spouts = new ArrayList<>();
-        for (Task task : idToTask.values()) {
-            this.spouts.add((ISpout) task.getTaskObject());
+        for (Task task : idToTask) {
+            if(task!=null)
+                this.spouts.add((ISpout) task.getTaskObject());
         }
         this.pending = new RotatingMap<>(2, new RotatingMap.ExpiredCallback<Long, TupleInfo>() {
             @Override
@@ -98,13 +99,15 @@ public class SpoutExecutor extends Executor {
             }
         });
 
-        this.spoutThrottlingMetrics.registerAll(stormConf, idToTask.values().iterator().next().getUserContext());
+        this.spoutThrottlingMetrics.registerAll(stormConf, idToTask.get(taskIds.get(0)).getUserContext());
         this.outputCollectors = new ArrayList<>();
-        for (Map.Entry<Integer, Task> entry : idToTask.entrySet()) {
-            Task taskData = entry.getValue();
+        for (int i=0; i<idToTask.size(); ++i) {
+            Task taskData = idToTask.get(i);
+            if (taskData==null)
+                continue;
             ISpout spoutObject = (ISpout) taskData.getTaskObject();
             spoutOutputCollector = new SpoutOutputCollectorImpl(
-                    spoutObject, this, taskData, entry.getKey(), emittedCount,
+                    spoutObject, this, taskData, i, emittedCount,
                     hasAckers, rand, hasEventLoggers, isDebug, pending);
             SpoutOutputCollector outputCollector = new SpoutOutputCollector(spoutOutputCollector);
             this.outputCollectors.add(outputCollector);
@@ -119,7 +122,7 @@ public class SpoutExecutor extends Executor {
             spoutObject.open(stormConf, taskData.getUserContext(), outputCollector);
         }
         openOrPrepareWasCalled.set(true);
-        LOG.info("Opened spout {}:{}", componentId, idToTask.keySet());
+        LOG.info("Opened spout {}:{}", componentId, taskIds);
         setupMetrics();
     }
 
@@ -143,7 +146,7 @@ public class SpoutExecutor extends Executor {
                 if (isActive) {
                     if (!lastActive.get()) {
                         lastActive.set(true);
-                        LOG.info("Activating spout {}:{}", componentId, idToTask.keySet());
+                        LOG.info("Activating spout {}:{}", componentId, taskIds);
                         for (ISpout spout : spouts) {
                             spout.activate();
                         }
@@ -156,7 +159,7 @@ public class SpoutExecutor extends Executor {
                 } else {
                     if (lastActive.get()) {
                         lastActive.set(false);
-                        LOG.info("Deactivating spout {}:{}", componentId, idToTask.keySet());
+                        LOG.info("Deactivating spout {}:{}", componentId, taskIds);
                         for (ISpout spout : spouts) {
                             spout.deactivate();
                         }

@@ -102,7 +102,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
     protected final Random rand;
     protected final JCQueue receiveQueue;
 
-    protected Map<Integer, Task> idToTask;
+    protected ArrayList<Task> idToTask;
     protected final Map<String, String> credentials;
     protected final Boolean isDebug;
     protected final Boolean hasEventLoggers;
@@ -193,7 +193,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
             }
         }
 
-        executor.idToTask = idToTask;
+        executor.idToTask = Utils.convertToArray(idToTask);
         return executor;
     }
 
