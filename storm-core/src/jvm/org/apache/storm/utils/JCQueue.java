@@ -32,20 +32,17 @@ import org.jctools.queues.ConcurrentCircularArrayQueue;
 import org.jctools.queues.MessagePassingQueue;
 import org.jctools.queues.MpscArrayQueue;
 import org.jctools.queues.SpscArrayQueue;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
 
-public class JCQueue implements IStatefulObject {
+public final class JCQueue implements IStatefulObject {
 
     public enum ProducerKind { SINGLE, MULTI };
 
-    private static final Logger LOG = LoggerFactory.getLogger(JCQueue.class);
     public static final Object INTERRUPT = new Object();
 
-    private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 5_000_000);
+    private ThroughputMeter emptyMeter = new ThroughputMeter("EmptyBatch", 30_000_000);
 
     private interface Inserter {
         // blocking call that can be interrupted with Thread.interrupt()

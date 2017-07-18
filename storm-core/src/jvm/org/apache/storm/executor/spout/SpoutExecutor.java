@@ -131,10 +131,15 @@ public class SpoutExecutor extends Executor {
         init(idToTask);
         return new Callable<Long>() {
 //            final RunningStat spoutConsCount = new RunningStat("Spout Avg consume count", 20_000_000, true);
+            int i=0;
+            final int recvqCheckSkipCount = getSpoutRecvqCheckSkipCount();
             @Override
             public Long call() throws Exception {
-                receiveQueue.consume(SpoutExecutor.this);
+                if (i++ == recvqCheckSkipCount) {
+                    receiveQueue.consume(SpoutExecutor.this);
+                    i=0;
 //                spoutConsCount.push(count);
+                }
 
                 long currCount = emittedCount.get();
                 boolean reachedMaxSpoutPending = (maxSpoutPending != 0) && (pending.size() >= maxSpoutPending);
@@ -251,5 +256,12 @@ public class SpoutExecutor extends Executor {
         } catch (Exception e) {
             throw Utils.wrapInRuntime(e);
         }
+    }
+
+
+    public int getSpoutRecvqCheckSkipCount() {
+        if(ackingEnabled)
+            return 0; // always check recQ if ACKing enabled
+        return Utils.getInt(conf.get(Config.TOPOLOGY_SPOUT_RECVQ_SKIPS), 0);
     }
 }
