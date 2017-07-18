@@ -468,7 +468,8 @@ public class WorkerState implements JCQueue.Consumer {
 
     private void transferLocalBatch(List<AddressedTuple> tupleBatch) {
         try {
-            for (AddressedTuple tuple : tupleBatch) {
+            for (int i = 0; i < tupleBatch.size(); i++) {
+                AddressedTuple tuple = tupleBatch.get(i);
                 JCQueue queue = shortExecutorReceiveQueueMap.get(tuple.dest);
                 queue.publish(tuple);
             }

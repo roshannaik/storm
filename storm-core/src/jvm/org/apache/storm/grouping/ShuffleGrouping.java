@@ -41,7 +41,6 @@ public class ShuffleGrouping implements CustomStreamGrouping, Serializable {
         Collections.shuffle(choices, new Random());
     }
 
-    //TODO: Roshan: Verify this method cannot be called by more than one thread
     @Override
     public List<Integer> chooseTasks(int taskId, List<Object> values) {
         if(current==choices.size())

@@ -18,11 +18,10 @@
 
 package org.apache.storm.utils;
 
-// TODO: publish() is blocking, either we need a timeout on it, or need to figure out if timeouts are needed for stopping.
 // TODO: Remove return 1L in Worker.java. Need a yield strategy if recvQ is empty (topology.disruptor.wait.timeout.millis ?)
 // TODO: Add metrics to count how often consumeBatch consume nothing, publishes fail/succeed, avg consume count, avg batch size for flushes on flushTuple
 // TODO: shutdown takes longer (at least in IDE) due to ZK connection termination
-// TODO: Document topology.producer.batch.size, topology.flush.tuple.freq.millis & deprecations
+// TODO: Document topology.producer.batch.size, topology.flush.tuple.freq.millis & deprecations, topology.spout.recvq.skips
 // TODO: dynamic updates to flush.tuple.freq.millis
 
 import com.lmax.disruptor.dsl.ProducerType;

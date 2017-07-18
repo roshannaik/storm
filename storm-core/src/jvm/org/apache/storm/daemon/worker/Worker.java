@@ -208,7 +208,7 @@ public class Worker implements Shutdownable, DaemonCommon {
 
         JCQueue.Consumer tupleHandler = workerState;
 
-        // This thread will publish the messages destined for remote tasks to remote connections
+        // This thread will send the messages destined for remote tasks (out of process)
         transferThread = Utils.asyncLoop(() -> {
             int x = workerState.transferQueue.consume(tupleHandler);
             if(x==0)

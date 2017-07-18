@@ -99,7 +99,7 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
             MessageId msgId;
             if (ackingEnabled && anchors != null) {
                 final Map<Long, Long> anchorsToIds = new HashMap<>();
-                for (Tuple a : anchors) {  //TODO: Roshan: perf critical path. Avoid using iterators here and below
+                for (Tuple a : anchors) {  //TODO: PERF: critical path. Avoid using iterators here and below
                     Set<Long> rootIds = a.getMessageId().getAnchorsToIds().keySet();
                     if (rootIds.size() > 0) {
                         long edgeId = MessageId.generateId(random);
