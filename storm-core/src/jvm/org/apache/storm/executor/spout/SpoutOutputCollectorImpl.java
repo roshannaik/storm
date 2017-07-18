@@ -69,9 +69,8 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
         try {
             return sendSpoutMsg(streamId, tuple, messageId, null);
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             LOG.warn("Spout thread interrupted during emit().");
-            return Collections.emptyList();
+            throw new RuntimeException(e);
         }
     }
 
@@ -81,8 +80,7 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
             sendSpoutMsg(streamId, tuple, messageId, taskId);
         } catch (InterruptedException e) {
             LOG.warn("Spout thread interrupted during emitDirect().");
-            Thread.currentThread().interrupt();
-            return;
+            throw new RuntimeException(e);
         }
     }
 
@@ -91,8 +89,8 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
         try {
             executor.getExecutorTransfer().flush();
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             LOG.warn("Spout thread interrupted during flush().");
+            throw new RuntimeException(e);
         }
     }
 

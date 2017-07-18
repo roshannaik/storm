@@ -179,8 +179,8 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
         try {
             xsfer.flush();
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             LOG.warn("Bolt thread interrupted during flush()");
+            throw new RuntimeException(e);
         }
     }
 

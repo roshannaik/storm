@@ -189,6 +189,7 @@ public class Task {
     public BuiltinMetrics getBuiltInMetrics() {
         return builtInMetrics;
     }
+
     // TODO: ROSHAN:  There appears to be a bug here... this msg should go to 'this' task... not based on outgoing tasks
     public void sendUnanchored(String stream, List<Object> values, ExecutorTransfer transfer) {
         Tuple tuple = getTuple(stream, values);
@@ -199,7 +200,7 @@ public class Task {
             }
         } catch (InterruptedException e) {
             LOG.warn("Thread interrupted during sendUnanchored().");
-            Thread.interrupted();
+            throw new RuntimeException(e);
         }
     }
 
