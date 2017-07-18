@@ -62,8 +62,7 @@ public class BoltExecutor extends Executor {
         }
 
         LOG.info("Preparing bolt {}:{}", componentId, getTaskIds() );
-        for (int i=0; i<idToTask.size(); ++i) {
-            Task taskData = idToTask.get(i);
+        for (Task taskData :idToTask) {
             if(taskData==null)
                 continue;
             IBolt boltObject = (IBolt) taskData.getTaskObject();
@@ -85,7 +84,7 @@ public class BoltExecutor extends Executor {
                 BuiltinMetricsUtil.registerQueueMetrics(map, stormConf, userContext);
             }
 
-            this.outputCollector = new BoltOutputCollectorImpl(this, taskData, i, rand, hasEventLoggers, ackingEnabled, isDebug);
+            this.outputCollector = new BoltOutputCollectorImpl(this, taskData, rand, hasEventLoggers, ackingEnabled, isDebug);
             boltObject.prepare(stormConf, userContext, new OutputCollector(outputCollector));
         }
         openOrPrepareWasCalled.set(true);

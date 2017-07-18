@@ -107,7 +107,7 @@ public class SpoutExecutor extends Executor {
                 continue;
             ISpout spoutObject = (ISpout) taskData.getTaskObject();
             spoutOutputCollector = new SpoutOutputCollectorImpl(
-                    spoutObject, this, taskData, i, emittedCount,
+                    spoutObject, this, taskData, emittedCount,
                     hasAckers, rand, hasEventLoggers, isDebug, pending);
             SpoutOutputCollector outputCollector = new SpoutOutputCollector(spoutOutputCollector);
             this.outputCollectors.add(outputCollector);
@@ -133,8 +133,8 @@ public class SpoutExecutor extends Executor {
 //            final RunningStat spoutConsCount = new RunningStat("Spout Avg consume count", 20_000_000, true);
             @Override
             public Long call() throws Exception {
-                   int count = receiveQueue.consume(SpoutExecutor.this);
-//                   spoutConsCount.push(count);
+                receiveQueue.consume(SpoutExecutor.this);
+//                spoutConsCount.push(count);
 
                 long currCount = emittedCount.get();
                 boolean reachedMaxSpoutPending = (maxSpoutPending != 0) && (pending.size() >= maxSpoutPending);

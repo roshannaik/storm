@@ -50,12 +50,12 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
     private TupleInfo globalTupleInfo = new TupleInfo();
 
     @SuppressWarnings("unused")
-    public SpoutOutputCollectorImpl(ISpout spout, SpoutExecutor executor, Task taskData, int taskId,
+    public SpoutOutputCollectorImpl(ISpout spout, SpoutExecutor executor, Task taskData,
                                     MutableLong emittedCount, boolean hasAckers, Random random,
                                     Boolean isEventLoggers, Boolean isDebug, RotatingMap<Long, TupleInfo> pending) {
         this.executor = executor;
         this.taskData = taskData;
-        this.taskId = taskId;
+        this.taskId = taskData.getTaskId();
         this.emittedCount = emittedCount;
         this.hasAckers = hasAckers;
         this.random = random;

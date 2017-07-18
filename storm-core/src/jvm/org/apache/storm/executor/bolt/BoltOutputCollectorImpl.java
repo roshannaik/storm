@@ -53,11 +53,11 @@ public class BoltOutputCollectorImpl implements IOutputCollector {
     private boolean ackingEnabled;
     private final boolean isDebug;
 
-    public BoltOutputCollectorImpl(BoltExecutor executor, Task taskData, int taskId, Random random,
+    public BoltOutputCollectorImpl(BoltExecutor executor, Task taskData,  Random random,
                                    boolean isEventLoggers, boolean ackingEnabled, boolean isDebug) {
         this.executor = executor;
         this.task = taskData;
-        this.taskId = taskId;
+        this.taskId = taskData.getTaskId();
         this.random = random;
         this.isEventLoggers = isEventLoggers;
         this.ackingEnabled = ackingEnabled;
