@@ -26,6 +26,7 @@ import org.apache.storm.topology.base.BaseBasicBolt;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
+import org.apache.storm.utils.ThroughputMeter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -35,9 +36,11 @@ public class CountBolt extends BaseBasicBolt {
     public static final String FIELDS_COUNT = "count";
 
     Map<String, Integer> counts = new HashMap<>();
+    private ThroughputMeter execMeter;
 
     @Override
     public void prepare(Map stormConf, TopologyContext context) {
+        execMeter = new ThroughputMeter("CountBolt execute", 10_000_000);
     }
 
     @Override
@@ -49,6 +52,7 @@ public class CountBolt extends BaseBasicBolt {
         count++;
         counts.put(word, count);
         collector.emit(new Values(word, count));
+        execMeter.record();
     }
 
     @Override

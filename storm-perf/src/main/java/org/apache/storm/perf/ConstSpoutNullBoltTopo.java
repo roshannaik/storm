@@ -63,7 +63,7 @@ public class ConstSpoutNullBoltTopo {
         // 3 - Setup Topology  --------
         TopologyBuilder builder = new TopologyBuilder();
 
-        builder.setSpout(SPOUT_ID, spout,  1 );
+        builder.setSpout(SPOUT_ID, spout,  Helper.getInt(conf, BOLT_COUNT, 1) );
         BoltDeclarer bd = builder.setBolt(BOLT_ID, bolt, Helper.getInt(conf, BOLT_COUNT, 1));
 
         String groupingType = Helper.getStr(conf, GROUPING);
