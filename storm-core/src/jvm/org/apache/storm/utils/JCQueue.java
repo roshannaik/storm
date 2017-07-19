@@ -23,6 +23,8 @@ package org.apache.storm.utils;
 // TODO: shutdown takes longer (at least in IDE) due to ZK connection termination
 // TODO: Document topology.producer.batch.size, topology.flush.tuple.freq.millis & deprecations, topology.spout.recvq.skips
 // TODO: dynamic updates to flush.tuple.freq.millis
+// TODO: Test back pressure... metrics should update in BP mode
+
 
 import com.lmax.disruptor.dsl.ProducerType;
 import org.apache.storm.metric.api.IStatefulObject;
@@ -248,10 +250,12 @@ public final class JCQueue implements IStatefulObject {
     /** Non blocking. Returns immediately if Q is empty. Returns number of elements consumed from Q */
     private int consumerImpl(Consumer consumer) throws InterruptedException {
         int count = queue.drain(consumer);
-        consumer.flush();
-        metrics.notifyDrain(count);
-        if(count==0)
+        if (count>0) {
+            consumer.flush();
+            metrics.notifyDrain(count);
+        } else {
             emptyMeter.record();
+        }
         return count;
     }
 
@@ -283,8 +287,6 @@ public final class JCQueue implements IStatefulObject {
      * TODO: Roshan: update metrics for retry attempts
      */
     public void publish(Object obj) throws InterruptedException {
-        if(queueName.equals("receive-queue[3,3]"))
-            System.err.println(obj.toString() + ":" + Thread.currentThread().getName());
         Inserter inserter = null;
         if (producerBatchSz > 1) {
             inserter = thdLocalBatcher.get();
