@@ -2330,13 +2330,11 @@ public class Utils {
         return rtn;
     }
 
-
+    // result array
     public static <V> ArrayList<V> convertToArray(Map<Integer, V> srcMap) {
         Set<Integer> executorIds = srcMap.keySet();
         Integer largestId = executorIds.stream().max(Integer::compareTo).get();
-//        Integer smallestId = executorIds.stream().min(Integer::compareTo).get();
-        ArrayList<V> result = new ArrayList<V>(Collections.nCopies(
-                    srcMap.keySet().stream().max(Integer::compareTo).get() +1 , null));
+        ArrayList<V> result = new ArrayList<>(Collections.nCopies(largestId+1 , null)); // creates array[largestId+1] filled with nulls
         for( Map.Entry<Integer, V> entry : srcMap.entrySet() ) {
             if (entry.getKey() >= 0) // don't need __system bolt (id=-1) here
                 result.set(entry.getKey(),  entry.getValue());
