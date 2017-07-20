@@ -391,7 +391,7 @@ public abstract class Executor implements Callable, JCQueue.Consumer {
         return ret;
     }
 
-    private Map normalizedComponentConf(Map stormConf, WorkerTopologyContext topologyContext, String componentId) {
+    private static Map normalizedComponentConf(Map stormConf, WorkerTopologyContext topologyContext, String componentId) {
         List<Object> keysToRemove = ConfigUtils.All_CONFIGS();
         keysToRemove.remove(Config.TOPOLOGY_DEBUG);
         keysToRemove.remove(Config.TOPOLOGY_MAX_SPOUT_PENDING);

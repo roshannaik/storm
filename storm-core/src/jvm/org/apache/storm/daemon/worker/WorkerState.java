@@ -243,7 +243,8 @@ public class WorkerState implements JCQueue.Consumer {
     }
 
     private final boolean trySerializeLocal;
-    private final TransferDrainer drainer;
+    private final KryoTupleSerializer serializer;
+    private TransferDrainer drainer;
 
     private static final long LOAD_REFRESH_INTERVAL_MS = 5000L;
 
@@ -310,6 +311,7 @@ public class WorkerState implements JCQueue.Consumer {
         if (trySerializeLocal) {
             LOG.warn("WILL TRY TO SERIALIZE ALL TUPLES (Turn off {} for production", Config.TOPOLOGY_TESTING_ALWAYS_TRY_SERIALIZE);
         }
+        this.serializer = new KryoTupleSerializer(topologyConf, getWorkerTopologyContext());
         this.drainer = new TransferDrainer();
     }
 
@@ -479,8 +481,12 @@ public class WorkerState implements JCQueue.Consumer {
         }
     }
 
-    public void flushRemotes(Map<Integer, List<TaskMessage>> remoteMap) throws InterruptedException {
-        transferQueue.publish(remoteMap);
+    /* Blocking call, can be interrupted with Thread.interrupt() */
+    public void transferRemote(AddressedTuple tuple) throws InterruptedException {
+        transferQueue.publish(tuple);
+    }
+
+    public void flushRemotes() throws InterruptedException {
         transferQueue.flush();
     }
 
@@ -490,14 +496,11 @@ public class WorkerState implements JCQueue.Consumer {
         }
     }
 
-    // TODO: consider having a max batch size besides what disruptor does automagically to prevent latency issues
-    public void sendTuplesToRemoteWorker(HashMap<Integer, ArrayList<TaskMessage>> packets) {
-        drainer.add(packets);
-    }
-
     @Override
-    public void accept(Object packets)  {
-        sendTuplesToRemoteWorker((HashMap<Integer, ArrayList<TaskMessage>>)packets);
+    public void accept(Object tuple)  {
+        AddressedTuple addressedTuple = (AddressedTuple) tuple;
+        TaskMessage tm = new TaskMessage(addressedTuple.getDest(), serializer.serialize(addressedTuple.getTuple()));
+        drainer.add(tm);
     }
 
     @Override

@@ -19,6 +19,7 @@
 package org.apache.storm.utils;
 
 // TODO: Remove return 1L in Worker.java. Need a yield strategy if recvQ is empty (topology.disruptor.wait.timeout.millis ?)
+// TODO: Need a yield strategy if outQ is full
 // TODO: Add metrics to count how often consumeBatch consume nothing, publishes fail/succeed, avg consume count, avg batch size for flushes on flushTuple
 // TODO: shutdown takes longer (at least in IDE) due to ZK connection termination
 // TODO: Document topology.producer.batch.size, topology.flush.tuple.freq.millis & deprecations, topology.spout.recvq.skips

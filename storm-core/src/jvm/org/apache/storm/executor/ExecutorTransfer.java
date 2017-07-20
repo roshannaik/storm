@@ -19,7 +19,6 @@ package org.apache.storm.executor;
 
 import org.apache.storm.Config;
 import org.apache.storm.daemon.worker.WorkerState;
-import org.apache.storm.messaging.TaskMessage;
 import org.apache.storm.serialization.KryoTupleSerializer;
 import org.apache.storm.tuple.AddressedTuple;
 import org.apache.storm.tuple.Tuple;
@@ -30,8 +29,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class ExecutorTransfer  {
@@ -42,18 +39,17 @@ public class ExecutorTransfer  {
     private final boolean isDebug;
     private final int producerBatchSz;
     private int remotesBatchSz = 0;
-    private final ArrayList<JCQueue> shortExecutorReceiveQueueMap; // using arrays instead of hashmap for perf reasons
+    private final ArrayList<JCQueue> localReceiveQueues; // [taksid]=queue
     private final ArrayList<JCQueue> outboundQueues;
 
-    final HashMap<Integer, List<TaskMessage>> remoteMap  = new HashMap<>();
 
     public ExecutorTransfer(WorkerState workerData, Map stormConf) {
         this.workerData = workerData;
         this.serializer = new KryoTupleSerializer(stormConf, workerData.getWorkerTopologyContext());
         this.isDebug = Utils.getBoolean(stormConf.get(Config.TOPOLOGY_DEBUG), false);
         this.producerBatchSz = Utils.getInt(stormConf.get(Config.TOPOLOGY_PRODUCER_BATCH_SIZE));
-        this.shortExecutorReceiveQueueMap = Utils.convertToArray(workerData.getShortExecutorReceiveQueueMap());
-        this.outboundQueues = new ArrayList<JCQueue>(Collections.nCopies(shortExecutorReceiveQueueMap.size(), null) );
+        this.localReceiveQueues = Utils.convertToArray(workerData.getShortExecutorReceiveQueueMap());
+        this.outboundQueues = new ArrayList<JCQueue>(Collections.nCopies(localReceiveQueues.size(), null) );
     }
 
 
@@ -65,7 +61,7 @@ public class ExecutorTransfer  {
 
         boolean isLocal = transferLocal(addressedTuple);
         if (!isLocal) {
-            cacheRemoteTuples(serializer, addressedTuple, remoteMap);
+            transferRemote(addressedTuple);
             ++remotesBatchSz;
             if(remotesBatchSz >=producerBatchSz) {
                 flushRemotes();
@@ -78,13 +74,8 @@ public class ExecutorTransfer  {
         return "No Queue here";
     }
 
-    //TODO: Roshan: double batching going on here. do we need it ? remote map can be created in the workerTransferThd
-    private static void cacheRemoteTuples(KryoTupleSerializer serializer, AddressedTuple tuple, Map<Integer, List<TaskMessage>> remoteMap) {
-        int destTask = tuple.dest;
-        if (! remoteMap.containsKey(destTask)) {
-            remoteMap.put(destTask, new ArrayList<>());
-        }
-        remoteMap.get(destTask).add(new TaskMessage(destTask, serializer.serialize(tuple.getTuple())));
+    private void transferRemote(AddressedTuple tuple) throws InterruptedException {
+        workerData.transferRemote(tuple);
     }
 
     // flushes local and remote messages
@@ -94,23 +85,22 @@ public class ExecutorTransfer  {
     }
 
     private void flushLocal() throws InterruptedException {
-        for (int i = 0; i < shortExecutorReceiveQueueMap.size(); i++) {
-            JCQueue q = shortExecutorReceiveQueueMap.get(i);
+        for (int i = 0; i < outboundQueues.size(); i++) {
+            JCQueue q = outboundQueues.get(i);
             if(q!=null)
                 q.flush();
         }
     }
 
     private void flushRemotes() throws InterruptedException {
-        if (!remoteMap.isEmpty()) {
-            workerData.flushRemotes(remoteMap);
-            remoteMap.clear();
-        }
+        workerData.flushRemotes();
     }
 
     public boolean transferLocal(AddressedTuple tuple) throws InterruptedException {
         workerData.checkSerialize(serializer, tuple);
-        JCQueue queue = shortExecutorReceiveQueueMap.get(tuple.dest);
+        if(tuple.dest>=localReceiveQueues.size())
+            return false;
+        JCQueue queue = localReceiveQueues.get(tuple.dest);
         if (queue==null)
             return false;
         queue.publish(tuple);

@@ -51,6 +51,10 @@ public class ConstSpoutNullBoltTopo {
     public static final String SHUFFLE_GROUPING = "shuffle";
     public static final String DEFAULT_GROUPING = LOCAL_GROPING;
 
+    public static final int DEFAULT_SPOUT_COUNT = 1;
+    public static final int DEFAULT_BOLT_COUNT = 1;
+    public static final int DEFAULT_ACKER_COUNT = 0;
+
     public static StormTopology getTopology(Map conf, int printFreq) {
 
         // 1 -  Setup Spout   --------
@@ -59,15 +63,14 @@ public class ConstSpoutNullBoltTopo {
         // 2 -  Setup DevNull Bolt   --------
         DevNullBolt bolt = new DevNullBolt(printFreq);
 
-
         // 3 - Setup Topology  --------
         TopologyBuilder builder = new TopologyBuilder();
 
-        builder.setSpout(SPOUT_ID, spout,  Helper.getInt(conf, BOLT_COUNT, 1) );
-        BoltDeclarer bd = builder.setBolt(BOLT_ID, bolt, Helper.getInt(conf, BOLT_COUNT, 1));
+        builder.setSpout(SPOUT_ID, spout,  Helper.getInt(conf, SPOUT_COUNT, DEFAULT_SPOUT_COUNT) );
+        BoltDeclarer bd = builder.setBolt(BOLT_ID, bolt, Helper.getInt(conf, BOLT_COUNT, DEFAULT_BOLT_COUNT) );
 
         String groupingType = Helper.getStr(conf, GROUPING);
-        if(groupingType==null || groupingType.equalsIgnoreCase(DEFAULT_GROUPING) )
+        if ( groupingType==null || groupingType.equalsIgnoreCase(DEFAULT_GROUPING) )
             bd.localOrShuffleGrouping(SPOUT_ID);
         else if(groupingType.equalsIgnoreCase(SHUFFLE_GROUPING) )
             bd.shuffleGrouping(SPOUT_ID);
@@ -83,7 +86,8 @@ public class ConstSpoutNullBoltTopo {
         if(args.length <= 0) {
             // For IDE based profiling ... submit topology to local cluster
             Config conf = new Config();
-            conf.setNumAckers(0);
+            conf.setNumAckers(DEFAULT_ACKER_COUNT);
+            conf.put(Config.TOPOLOGY_SPOUT_RECVQ_SKIPS, 8);
             LocalCluster cluster = Helper.runOnLocalCluster(TOPOLOGY_NAME, getTopology(conf, printFreq), conf);
 
             Helper.setupShutdownHook(cluster, TOPOLOGY_NAME);
@@ -98,7 +102,7 @@ public class ConstSpoutNullBoltTopo {
             }
             Integer durationSec = Integer.parseInt(args[0]);
             Map topoConf =  (args.length==2) ? Utils.findAndReadConfigFile(args[1])  : new Config();
-
+            topoConf.put(Config.TOPOLOGY_SPOUT_RECVQ_SKIPS, 8);
             //  Submit topology to storm cluster
             Helper.runOnClusterAndPrintMetrics(durationSec, TOPOLOGY_NAME, topoConf, getTopology(topoConf, printFreq));
         }

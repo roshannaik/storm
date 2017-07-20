@@ -132,7 +132,7 @@ public class SpoutOutputCollectorImpl implements ISpoutOutputCollector {
                 }
 
                 final TupleImpl tuple = new TupleImpl(executor.getWorkerTopologyContext(), values, executor.getComponentId(), this.taskId, stream, msgId);
-                executor.getExecutorTransfer().transfer(t, tuple); // TODO: PERF: This is also limiting emit() throughput
+                executor.getExecutorTransfer().transfer(t, tuple); // TODO: PERF: This is limiting emit() throughput. need to see why.
             }
             if (isEventLoggers) {
                 taskData.sendToEventLogger(executor, values, executor.getComponentId(), messageId, random);
