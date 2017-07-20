@@ -253,7 +253,7 @@ topology.executor.receive.buffer.size: 50000
 topology.transfer.buffer.size: 16384 # batched
 topology.producer.batch.size: 1000
 topology.flush.tuple.freq.millis: 5000
-topology.spout.recvq.skips: 8  # Check recvQ once every N invocations of Spout's nextTuple() [when ACKs disabled]
+topology.spout.recvq.skips: 3  # Check recvQ once every N invocations of Spout's nextTuple() [when ACKs disabled]
 
 topology.disable.loadaware.messaging: true
 topology.state.checkpoint.interval.ms: 1000
