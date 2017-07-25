@@ -754,7 +754,6 @@ public class Nimbus implements Iface, Shutdownable, DaemonCommon {
         ret.addAll(Utils.OR(state.heartbeatStorms(), EMPTY_STRING_LIST));
         ret.addAll(Utils.OR(state.errorTopologies(), EMPTY_STRING_LIST));
         ret.addAll(Utils.OR(store.storedTopoIds(), EMPTY_STRING_SET));
-        ret.addAll(Utils.OR(state.backpressureTopologies(), EMPTY_STRING_LIST));
         ret.removeAll(Utils.OR(state.activeStorms(), EMPTY_STRING_LIST));
         return ret;
     }
@@ -2075,7 +2074,6 @@ public class Nimbus implements Iface, Shutdownable, DaemonCommon {
                 LOG.info("Cleaning up {}", topoId);
                 state.teardownHeartbeats(topoId);
                 state.teardownTopologyErrors(topoId);
-                state.removeBackpressure(topoId);
                 rmDependencyJarsInTopology(topoId);
                 forceDeleteTopoDistDir(topoId);
                 rmTopologyKeys(topoId);
@@ -2614,9 +2612,6 @@ public class Nimbus implements Iface, Shutdownable, DaemonCommon {
                 setupStormCode(conf, topoId, uploadedJarLocation, totalConfToSave, topology);
                 waitForDesiredCodeReplication(totalConf, topoId);
                 state.setupHeatbeats(topoId);
-                if (ObjectReader.getBoolean(totalConf.get(Config.TOPOLOGY_BACKPRESSURE_ENABLE), false)) {
-                    state.setupBackpressure(topoId);
-                }
                 notifyTopologyActionListener(topoName, "submitTopology");
                 TopologyStatus status = null;
                 switch (options.get_initial_status()) {
