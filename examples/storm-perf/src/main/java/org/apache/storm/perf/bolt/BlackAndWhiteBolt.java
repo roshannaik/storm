@@ -18,6 +18,9 @@
 
 package org.apache.storm.perf.bolt;
 
+import java.util.ArrayList;
+import java.util.Map;
+
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -25,25 +28,33 @@ import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.openimaj.image.MBFImage;
-import org.openimaj.image.processing.edges.CannyEdgeDetector;
 
-import java.util.ArrayList;
-import java.util.Map;
-
-
-public class EdgeDetectBolt extends BaseRichBolt {
+public class BlackAndWhiteBolt extends BaseRichBolt {
     private OutputCollector collector;
+    private Float[] result;
 
     @Override
     public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
+        result = new Float[] {0f, 0f, 0f};
     }
 
     @Override
     public void execute(Tuple tuple) {
-        MBFImage newFrame = ((MBFImage) tuple.getValue(0)).clone().process(new CannyEdgeDetector());
+        MBFImage bwFrame = ((MBFImage) tuple.getValue(0)).clone();
+        for (int x = 0; x < bwFrame.getBounds().width; x++) {
+            for (int y = 0; y < bwFrame.getBounds().height; y++) {
+                Float[] p = bwFrame.getPixel(x, y);
+                float avg = (p[0] * 0.21f + p[1] * 0.72f + p[2] * 0.07f);
+                result[0] = avg;
+                result[1] = avg;
+                result[2] = avg;
+                bwFrame.setPixel(x, y, result);
+            }
+        }
+
         ArrayList<Object> newTuple = new ArrayList<>(1);
-        newTuple.add(newFrame);
+        newTuple.add(bwFrame);
         collector.emit(newTuple);
     }
 
@@ -51,4 +62,5 @@ public class EdgeDetectBolt extends BaseRichBolt {
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
         declarer.declare(new Fields("frame"));
     }
+
 }

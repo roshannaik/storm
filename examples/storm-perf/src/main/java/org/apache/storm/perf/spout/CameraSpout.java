@@ -18,26 +18,24 @@
 
 package org.apache.storm.perf.spout;
 
+import java.util.Iterator;
+import java.util.Map;
+
 import org.apache.storm.spout.SpoutOutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichSpout;
 import org.apache.storm.tuple.Fields;
-import org.apache.storm.tuple.TupleImpl;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.Utils;
 import org.openimaj.image.MBFImage;
-import org.openimaj.video.capture.Device;
 import org.openimaj.video.capture.VideoCapture;
 import org.openimaj.video.capture.VideoCaptureException;
-
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.Map;
 
 public class CameraSpout extends BaseRichSpout {
 
     private static final String DEFAUT_FIELD_NAME = "frame";
+    String[] outStreams;
     private String fieldName = DEFAUT_FIELD_NAME;
     private SpoutOutputCollector collector = null;
     private int count = 0;
@@ -45,11 +43,10 @@ public class CameraSpout extends BaseRichSpout {
     private int ackCount = 0;
     private VideoCapture vid = null;
     private Iterator<MBFImage> frameItr = null;
-    String[] outStreams;
 
     public CameraSpout(String... streams) {
-        if (streams==null || streams.length==0) {
-            streams = new String[]{Utils.DEFAULT_STREAM_ID};
+        if (streams == null || streams.length == 0) {
+            streams = new String[] {Utils.DEFAULT_STREAM_ID};
         }
         outStreams = streams;
     }
@@ -61,7 +58,7 @@ public class CameraSpout extends BaseRichSpout {
 
     @Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        if (outStreams==null || outStreams.length==0) {
+        if (outStreams == null || outStreams.length == 0) {
             declarer.declare(new Fields(fieldName));
         } else {
             for (String stream : outStreams) {
@@ -79,7 +76,6 @@ public class CameraSpout extends BaseRichSpout {
     public void nextTuple() {
         if (frameItr == null) {
             try {
-                Device defaultDevice = VideoCapture.getVideoDevices().get(0);
                 this.vid = new VideoCapture(320, 240); // , 60, defaultDevice
                 this.frameItr = vid.iterator();
             } catch (VideoCaptureException e) {
@@ -87,12 +83,12 @@ public class CameraSpout extends BaseRichSpout {
             }
         }
         MBFImage frame = frameItr.next();
-        if (outStreams==null || outStreams.length==0) {
+        if (outStreams == null || outStreams.length == 0) {
             collector.emit(new Values(frame));
         } else {
             collector.emit(outStreams[0], new Values(frame));
             for (int i = 1; i < outStreams.length; i++) {
-                collector.emit(outStreams[i], new Values(frame.clone()));
+                collector.emit(outStreams[i], new Values(frame));
             }
         }
     }

@@ -18,6 +18,10 @@
 
 package org.apache.storm.perf.bolt;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -32,13 +36,9 @@ import org.openimaj.image.processing.face.detection.DetectedFace;
 import org.openimaj.image.processing.face.detection.FaceDetector;
 import org.openimaj.image.processing.face.detection.HaarCascadeDetector;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
 public class FaceDetectBolt extends BaseRichBolt {
-    private OutputCollector collector;
     FaceDetector<DetectedFace, FImage> fDetector;
+    private OutputCollector collector;
 
     @Override
     public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
@@ -48,7 +48,7 @@ public class FaceDetectBolt extends BaseRichBolt {
 
     @Override
     public void execute(Tuple tuple) {
-        MBFImage frame = ((MBFImage) tuple.getValue(0));
+        MBFImage frame = ((MBFImage) tuple.getValue(0)).clone();
         List<DetectedFace> faces = fDetector.detectFaces(Transforms.calculateIntensity(frame));
         for (DetectedFace face : faces) {
             frame.drawShape(face.getBounds(), RGBColour.RED);
@@ -57,7 +57,6 @@ public class FaceDetectBolt extends BaseRichBolt {
         ArrayList<Object> newTuple = new ArrayList<>(1);
         newTuple.add(frame);
         collector.emit(newTuple);
-//        collector.ack(tuple);
     }
 
     @Override

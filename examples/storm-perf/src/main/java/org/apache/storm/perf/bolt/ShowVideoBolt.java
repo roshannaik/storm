@@ -18,6 +18,8 @@
 
 package org.apache.storm.perf.bolt;
 
+import java.util.Map;
+
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -27,28 +29,21 @@ import org.apache.storm.tuple.Tuple;
 import org.openimaj.image.DisplayUtilities;
 import org.openimaj.image.MBFImage;
 
-import java.util.Map;
-
 public class ShowVideoBolt extends BaseRichBolt {
     private final String windowName;
-    static int count = 0;
-    private OutputCollector collector;
 
-    public ShowVideoBolt() {
-        this.windowName = "win" + count;
-        ++count;
+    public ShowVideoBolt(String windowName) {
+        this.windowName = windowName;
     }
 
     @Override
     public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
-        this.collector = collector;
     }
 
     @Override
     public void execute(Tuple tuple) {
         MBFImage frame = (MBFImage) tuple.getValue(0);
         DisplayUtilities.displayName(frame, windowName);
-//        collector.ack(tuple);
     }
 
     @Override

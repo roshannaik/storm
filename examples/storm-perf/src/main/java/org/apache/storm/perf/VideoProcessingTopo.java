@@ -20,6 +20,7 @@ package org.apache.storm.perf;
 
 import org.apache.storm.Config;
 import org.apache.storm.generated.StormTopology;
+import org.apache.storm.perf.bolt.BlackAndWhiteBolt;
 import org.apache.storm.perf.bolt.EdgeDetectBolt;
 import org.apache.storm.perf.bolt.FaceDetectBolt;
 import org.apache.storm.perf.bolt.ShowVideoBolt;
@@ -29,54 +30,15 @@ import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.utils.Utils;
 
 import java.util.ArrayList;
-import java.util.Map;
 
 public class VideoProcessingTopo {
 
     public static final String TOPOLOGY_NAME = "VideoProcessTopo";
     public static final String SPOUT_ID = "cameraSpout";
-    public static final String BOLT1_ID = "edgeDetectBolt";
-    public static final String BOLT2_ID = "showBolt";
-
-    public static final String BOLT3_ID = "edgeDetectBolt2";
-    public static final String BOLT4_ID = "showBolt2";
-
-    public static final String BOLT5_ID = "edgeDetectBolt3";
-    public static final String BOLT6_ID = "showBolt3";
 
     static StormTopology getTopology(int count) {
 
         TopologyBuilder builder = makePaths(count);
-
-        // 0 - Build Topology  --------
-
-
-//        TopologyBuilder builder = new TopologyBuilder();
-//
-//        // 1 -  Setup Spout   --------
-//        builder.setSpout(SPOUT_ID, new CameraSpout("s1", "s2", "s3"), 1);
-//
-//        // 2 -  Path 1   --------
-//        builder.setBolt(BOLT1_ID, new FaceDetectBolt(), 1)
-//            .localOrShuffleGrouping(SPOUT_ID, "s1");
-//
-//        builder.setBolt(BOLT2_ID, new ShowVideoBolt(), 1)
-//            .localOrShuffleGrouping(BOLT1_ID);
-//
-//        // 3 -  Path 2   --------
-//        builder.setBolt(BOLT3_ID, new EdgeDetectBolt(), 1)
-//            .localOrShuffleGrouping(SPOUT_ID, "s2");
-//
-//        builder.setBolt(BOLT4_ID, new ShowVideoBolt(), 1)
-//            .localOrShuffleGrouping(BOLT3_ID);
-//
-//        // 4 -  Path 3   --------
-//        builder.setBolt(BOLT5_ID, new FaceDetectBolt(), 1)
-//            .localOrShuffleGrouping(SPOUT_ID, "s3");
-//
-//        builder.setBolt(BOLT6_ID, new ShowVideoBolt(), 1)
-//            .localOrShuffleGrouping(BOLT5_ID);
-
 
         return builder.createTopology();
     }
@@ -122,23 +84,36 @@ public class VideoProcessingTopo {
 
 
     static TopologyBuilder makePaths(int n) {
-        String[] streams = makeStreamNames(n);
+        String[] streams = null; // makeStreamNames(n);
 
         TopologyBuilder builder = new TopologyBuilder();
         builder.setSpout(SPOUT_ID, new CameraSpout(streams), 1);
-
+        int id = 0;
         for (int i = 0; i < n; i++) {
-            String boltId = "bolt"+i;
+            String boltId;
 
-            if (i%2 == 0) {
-                builder.setBolt(boltId, new FaceDetectBolt(), 1)
-                    .localOrShuffleGrouping(SPOUT_ID, streams[i]);
-            } else {
-                builder.setBolt(boltId, new EdgeDetectBolt(), 1)
-                    .localOrShuffleGrouping(SPOUT_ID, streams[i]);
+            switch (id) {
+                case 0:
+                    boltId = "FaceDetect" + i;
+                    builder.setBolt(boltId, new FaceDetectBolt(), 1)
+                        .allGrouping(SPOUT_ID);
+                    ++id;
+                    break;
+                case 1:
+                    boltId = "EdgeDetect" + i;
+                    builder.setBolt(boltId, new EdgeDetectBolt(), 1)
+                        .allGrouping(SPOUT_ID);
+                    ++id;
+                    break;
+                default:
+                    boltId = "Black-n-White" + i;
+                    builder.setBolt(boltId, new BlackAndWhiteBolt(), 1)
+                        .allGrouping(SPOUT_ID);
+                    id = 0;
+                    break;
             }
 
-            builder.setBolt("showBolt"+i, new ShowVideoBolt(), 1)
+            builder.setBolt(boltId + "Viewer", new ShowVideoBolt(boltId), 1)
                 .localOrShuffleGrouping(boltId);
 
         }
@@ -150,6 +125,6 @@ public class VideoProcessingTopo {
         for (int i = 1; i <= n; i++) {
             result.add("s" + i);
         }
-        return result.toArray(new String[]{});
+        return result.toArray(new String[] {});
     }
 }
