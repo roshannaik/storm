@@ -48,6 +48,7 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.TupleImpl;
 import org.apache.storm.tuple.Values;
+import org.apache.storm.utils.CustomIndexArray;
 import org.apache.storm.utils.TupleUtils;
 import org.apache.storm.utils.Utils;
 import org.junit.After;
@@ -323,7 +324,7 @@ public class KafkaBoltTest {
     private Tuple generateTestTuple(Object key, Object message) {
         TopologyBuilder builder = new TopologyBuilder();
         GeneralTopologyContext topologyContext =
-            new GeneralTopologyContext(builder.createTopology(), new Config(), new HashMap<>(), new HashMap<>(), new HashMap<>(), "") {
+            new GeneralTopologyContext(builder.createTopology(), new Config(), new CustomIndexArray<String>(0,1), new HashMap<>(), new HashMap<>(), "") {
                 @Override
                 public Fields getComponentOutputFields(String componentId, String streamId) {
                     return new Fields("key", "message");
@@ -335,7 +336,7 @@ public class KafkaBoltTest {
     private Tuple generateTestTuple(Object message) {
         TopologyBuilder builder = new TopologyBuilder();
         GeneralTopologyContext topologyContext =
-            new GeneralTopologyContext(builder.createTopology(), new Config(), new HashMap<>(), new HashMap<>(), new HashMap<>(), "") {
+            new GeneralTopologyContext(builder.createTopology(), new Config(), new CustomIndexArray<String>(0,1), new HashMap<>(), new HashMap<>(), "") {
                 @Override
                 public Fields getComponentOutputFields(String componentId, String streamId) {
                     return new Fields("message");
