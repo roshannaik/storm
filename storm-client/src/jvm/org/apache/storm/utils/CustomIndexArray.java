@@ -9,8 +9,9 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /***
- *  A fixed size array with a custom defined indexing range. The range can have lower bound that is -ve. Upper bound must be
- * @param <T> type of value to be stored
+ *  A fixed size array with a customizable indexing range. The range can have lower bound that is -ve. Upper bound must be
+ * @param <T> type of value to be stored. Intended to be a faster alternative to HashMap<Integer, .. >. Only applicable
+ *  as a substitute if the largest & smallest Integer being stored in the map is known at time of creation.
  *  This class does not inherit from :
  *   - Map<Integer,T> : For performance reasons. The get(Object key) method requires key to be cast to Integer before use.
  *   - ArrayList<T> : as this class supports negative indexes & cannot grow/shrink.
@@ -24,8 +25,8 @@ public class CustomIndexArray<T>  {
 
     /**
      * Creates the array with (upperIndex-lowerIndex+1) elements, initialized to null.
-     * @param lowerIndex Smallest valid index for the array. Can be +ve, -ve or 0.
-     * @param upperIndex Smallest valid index for the array. Can be +ve, -ve or 0. Must be > lowerIndex
+     * @param lowerIndex Smallest (inclusive) valid index for the array. Can be +ve, -ve or 0.
+     * @param upperIndex Largest  (inclusive) valid index for the array. Can be +ve, -ve or 0. Must be > lowerIndex
      */
     public CustomIndexArray(int lowerIndex, int upperIndex) {
         if (lowerIndex >= upperIndex) {
@@ -74,10 +75,16 @@ public class CustomIndexArray<T>  {
         }
     }
 
+    /**
+     * @throws IndexOutOfBoundsException if index is outside of bounds specified to constructor
+     */
     public T get(int index) {
         return elements.get(index - baseIndex);
     }
 
+    /**
+     * @throws IndexOutOfBoundsException if index is outside of bounds specified to constructor
+     */
     public T set(int index, T value) {
         return elements.set(index - baseIndex, value);
     }
