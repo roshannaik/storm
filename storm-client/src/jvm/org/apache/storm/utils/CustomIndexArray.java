@@ -1,6 +1,5 @@
 package org.apache.storm.utils;
 
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -9,9 +8,9 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /***
- *  A fixed size array with a customizable indexing range. The range can have lower bound that is -ve. Upper bound must be
- * @param <T> type of value to be stored. Intended to be a faster alternative to HashMap<Integer, .. >. Only applicable
- *  as a substitute if the largest & smallest Integer being stored in the map is known at time of creation.
+ *  A fixed size array with a customizable indexing range. The index range can have -ve lower / upper bound.
+ *  Intended to be a faster alternative to HashMap<Integer, .. >. Only applicable as a substitute if the
+ *  largest & smallest indices are known at time of creation.
  *  This class does not inherit from :
  *   - Map<Integer,T> : For performance reasons. The get(Object key) method requires key to be cast to Integer before use.
  *   - ArrayList<T> : as this class supports negative indexes & cannot grow/shrink.
@@ -41,14 +40,14 @@ public class CustomIndexArray<T>  {
 
     private static <T> ArrayList<T> makeNullInitializedArray(int elemCount) {
         ArrayList<T> result = new ArrayList<T>(elemCount);
-        for (int i=0; i < elemCount; i++) {
+        for (int i = 0; i < elemCount; i++) {
             result.add(null);
         }
         return result;
     }
 
     /**
-     * Initializes the array with elements from a HashTable
+     * Initializes the array with elements from a HashTable.
      *
      * @param src  the source map from which to initialize
      */
@@ -76,6 +75,7 @@ public class CustomIndexArray<T>  {
     }
 
     /**
+     * Get the value at the index.
      * @throws IndexOutOfBoundsException if index is outside of bounds specified to constructor
      */
     public T get(int index) {
@@ -83,28 +83,42 @@ public class CustomIndexArray<T>  {
     }
 
     /**
+     * Set the value at the index.
      * @throws IndexOutOfBoundsException if index is outside of bounds specified to constructor
      */
     public T set(int index, T value) {
         return elements.set(index - baseIndex, value);
     }
 
+    /**
+     * Returns the number of elements (including null elements).
+     */
     public int size() {
         return elemCount;
     }
 
+    /**
+     * Always returns true as this cannot be empty.
+     */
     public boolean isEmpty() {
         return false;
     }
 
+
+    /**
+     * Check if index is valid.
+     */
     public boolean isValidIndex(int index) {
         int actualIndex = index - baseIndex;
-        if (actualIndex<0 || actualIndex>=elemCount) {
+        if (actualIndex < 0  ||  actualIndex >= elemCount) {
             return false;
         }
         return true;
     }
 
+    /**
+     * Returns the index range as a Set.
+     */
     public Set<Integer> indices() {
         Set<Integer> result = new TreeSet<>(); // retain order
         for (int i = 0; i < elemCount; i++) {
@@ -113,7 +127,9 @@ public class CustomIndexArray<T>  {
         return result;
     }
 
-    // inverts the arr into a map
+    /**
+     * Inverts this array into a Map.
+     */
     public Map<T, List<Integer>> getReverseMap() {
         HashMap<T, List<Integer>> result = new HashMap<>(elemCount);
         for (int i = 0; i < elements.size(); i++) {
@@ -131,7 +147,10 @@ public class CustomIndexArray<T>  {
         return result;
     }
 
-    public List<T> getItems() {
+    /**
+     * Returns the stored values as an ArrayList.
+     */
+    public ArrayList<T> getItems() {
         return elements;
     }
 }

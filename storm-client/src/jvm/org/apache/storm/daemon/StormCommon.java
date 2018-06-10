@@ -47,10 +47,11 @@ import org.apache.storm.task.IBolt;
 import org.apache.storm.task.WorkerTopologyContext;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.utils.ConfigUtils;
+import org.apache.storm.utils.CustomIndexArray;
 import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.Utils;
 import org.apache.storm.utils.WrappedInvalidTopologyException;
-import org.json.simple.JSONValue;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -499,7 +500,7 @@ public class StormCommon {
             StormTopology stormTopology = (StormTopology) workerData.get(Constants.SYSTEM_TOPOLOGY);
             Map<String, Object> topoConf = (Map) workerData.get(Constants.STORM_CONF);
             CustomIndexArray<String> taskToComponent =
-                new CustomIndexArray<>( (Map<Integer, String>) workerData.get(Constants.TASK_TO_COMPONENT) );
+                new CustomIndexArray<>((Map<Integer, String>) workerData.get(Constants.TASK_TO_COMPONENT));
             Map<String, List<Integer>> componentToSortedTasks =
                 (Map<String, List<Integer>>) workerData.get(Constants.COMPONENT_TO_SORTED_TASKS);
             Map<String, Map<String, Fields>> componentToStreamToFields =
