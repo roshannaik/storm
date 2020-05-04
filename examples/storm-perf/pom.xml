@@ -31,7 +31,7 @@
     <description>Topologies and tools to measure performance.</description>
 
     <properties>
-        <openimaj.version>1.3.6</openimaj.version>
+        <openimaj.version>1.3.10</openimaj.version>
     </properties>
     <build>
         <plugins>

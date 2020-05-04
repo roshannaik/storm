@@ -37,19 +37,19 @@ import org.openimaj.image.processing.face.detection.FaceDetector;
 import org.openimaj.image.processing.face.detection.HaarCascadeDetector;
 
 public class FaceDetectBolt extends BaseRichBolt {
-    FaceDetector<DetectedFace, FImage> fDetector;
+    FaceDetector<DetectedFace, FImage> faceDetector;
     private OutputCollector collector;
 
     @Override
     public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
         this.collector = collector;
-        fDetector = new HaarCascadeDetector(80);
+        faceDetector = new HaarCascadeDetector(80);
     }
 
     @Override
     public void execute(Tuple tuple) {
         MBFImage frame = ((MBFImage) tuple.getValue(0)).clone();
-        List<DetectedFace> faces = fDetector.detectFaces(Transforms.calculateIntensity(frame));
+        List<DetectedFace> faces = faceDetector.detectFaces(Transforms.calculateIntensity(frame));
         for (DetectedFace face : faces) {
             frame.drawShape(face.getBounds(), RGBColour.RED);
         }

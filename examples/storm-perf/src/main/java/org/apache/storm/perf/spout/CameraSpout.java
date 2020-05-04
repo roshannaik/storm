@@ -29,6 +29,7 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.utils.Utils;
 import org.openimaj.image.MBFImage;
+import org.openimaj.video.VideoDisplay;
 import org.openimaj.video.capture.VideoCapture;
 import org.openimaj.video.capture.VideoCaptureException;
 
@@ -41,8 +42,9 @@ public class CameraSpout extends BaseRichSpout {
     private int count = 0;
     private Long sleep = 0L;
     private int ackCount = 0;
-    private VideoCapture vid = null;
+    // private VideoCapture vid = null;
     private Iterator<MBFImage> frameItr = null;
+    private VideoDisplay<MBFImage> display;
 
     public CameraSpout(String... streams) {
         if (streams == null || streams.length == 0) {
@@ -76,8 +78,11 @@ public class CameraSpout extends BaseRichSpout {
     public void nextTuple() {
         if (frameItr == null) {
             try {
-                this.vid = new VideoCapture(320, 240); // , 60, defaultDevice
-                this.frameItr = vid.iterator();
+                //this.vid = new VideoCapture(320, 240); // , 60, defaultDevice
+                // open the capture device and create a window to display in
+                display = VideoDisplay.createVideoDisplay(new VideoCapture(320, 240));
+
+                this.frameItr = display.getVideo().iterator();
             } catch (VideoCaptureException e) {
                 throw new RuntimeException(e);
             }
