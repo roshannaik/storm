@@ -27,7 +27,17 @@ storm.messaging.netty.max_retries: 10
 storm.messaging.netty.min_wait_ms: 1000
 storm.messaging.netty.max_wait_ms: 5000
 
+# Executor metrics reporting interval, keep it short enough for cases fetching executors metrics
+# through restful API
+executor.metrics.frequency.secs: 3
+
 drpc.servers:
   - "node1"
 
 supervisor.slots.ports: [6700, 6701, 6702, 6703, 6704, 6705, 6706, 6707, 6708, 6709]
+
+# Enable assertions
+nimbus.childopts: "-Xmx1024m -ea"
+supervisor.childopts: "-Xmx256m -ea"
+worker.childopts: "-Xmx%HEAP-MEM%m -XX:+PrintGCDetails -Xloggc:artifacts/gc.log -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=10 -XX:GCLogFileSize=1M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=artifacts/heapdump -ea"
+ui.childopts: "-Xmx768m -ea"

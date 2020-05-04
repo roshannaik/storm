@@ -1,20 +1,15 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
+
 package org.apache.storm.container.cgroup;
 
 import java.io.IOException;
@@ -23,59 +18,61 @@ import java.util.Set;
 public interface CgroupCommonOperation {
 
     /**
-     * add task to cgroup
+     * add task to cgroup.
+     *
      * @param taskid task id of task to add
      */
-    public void addTask(int taskid) throws IOException;
+    void addTask(int taskid) throws IOException;
 
     /**
-     * Get a list of task ids running in CGroup
+     * Get a list of task ids running in CGroup.
      */
-    public Set<Integer> getTasks() throws IOException;
+    Set<Integer> getTasks() throws IOException;
 
     /**
-     * add a process to cgroup
+     * add a process to cgroup.
+     *
      * @param pid the PID of the process to add
      */
-    public void addProcs(int pid) throws IOException;
+    void addProcs(int pid) throws IOException;
 
     /**
-     * get the PIDs of processes running in cgroup
+     * get the PIDs of processes running in cgroup.
      */
-    public Set<Long> getPids() throws IOException;
+    Set<Long> getPids() throws IOException;
 
     /**
-     * to set notify_on_release config in cgroup
+     * to get the notify_on_release config.
      */
-    public void setNotifyOnRelease(boolean flag) throws IOException;
+    boolean getNotifyOnRelease() throws IOException;
 
     /**
-     * to get the notify_on_release config
+     * to set notify_on_release config in cgroup.
      */
-    public boolean getNotifyOnRelease() throws IOException;
+    void setNotifyOnRelease(boolean flag) throws IOException;
 
     /**
-     * set a command for the release agent to execute
+     * get the command for the relase agent to execute.
      */
-    public void setReleaseAgent(String command) throws IOException;
+    String getReleaseAgent() throws IOException;
 
     /**
-     * get the command for the relase agent to execute
+     * set a command for the release agent to execute.
      */
-    public String getReleaseAgent() throws IOException;
+    void setReleaseAgent(String command) throws IOException;
 
     /**
-     * Set the cgroup.clone_children config
+     * get the cgroup.clone_children config.
      */
-    public void setCgroupCloneChildren(boolean flag) throws IOException;
+    boolean getCgroupCloneChildren() throws IOException;
 
     /**
-     * get the cgroup.clone_children config
+     * Set the cgroup.clone_children config.
      */
-    public boolean getCgroupCloneChildren() throws IOException;
+    void setCgroupCloneChildren(boolean flag) throws IOException;
 
     /**
-     * set event control config
+     * set event control config.
      */
-    public void setEventControl(String eventFd, String controlFd, String... args) throws IOException;
+    void setEventControl(String eventFd, String controlFd, String... args) throws IOException;
 }

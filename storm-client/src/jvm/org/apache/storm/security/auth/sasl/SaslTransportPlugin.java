@@ -1,23 +1,18 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
 
 package org.apache.storm.security.auth.sasl;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.Socket;
 import java.security.Principal;
@@ -34,41 +29,39 @@ import org.apache.storm.security.auth.ITransportPlugin;
 import org.apache.storm.security.auth.ReqContext;
 import org.apache.storm.security.auth.ThriftConnectionType;
 import org.apache.storm.security.auth.kerberos.NoOpTTrasport;
+import org.apache.storm.thrift.TException;
+import org.apache.storm.thrift.TProcessor;
+import org.apache.storm.thrift.protocol.TBinaryProtocol;
+import org.apache.storm.thrift.protocol.TProtocol;
+import org.apache.storm.thrift.server.TServer;
+import org.apache.storm.thrift.server.TThreadPoolServer;
+import org.apache.storm.thrift.transport.TSaslServerTransport;
+import org.apache.storm.thrift.transport.TServerSocket;
+import org.apache.storm.thrift.transport.TSocket;
+import org.apache.storm.thrift.transport.TTransport;
+import org.apache.storm.thrift.transport.TTransportException;
+import org.apache.storm.thrift.transport.TTransportFactory;
 import org.apache.storm.utils.ExtendedThreadPoolExecutor;
-import org.apache.thrift.TException;
-import org.apache.thrift.TProcessor;
-import org.apache.thrift.protocol.TBinaryProtocol;
-import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.server.TServer;
-import org.apache.thrift.server.TThreadPoolServer;
-import org.apache.thrift.transport.TSaslServerTransport;
-import org.apache.thrift.transport.TServerSocket;
-import org.apache.thrift.transport.TSocket;
-import org.apache.thrift.transport.TTransport;
-import org.apache.thrift.transport.TTransportException;
-import org.apache.thrift.transport.TTransportFactory;
 
 /**
  * Base class for SASL authentication plugin.
  */
-public abstract class SaslTransportPlugin implements ITransportPlugin {
+public abstract class SaslTransportPlugin implements ITransportPlugin, Closeable {
     protected ThriftConnectionType type;
     protected Map<String, Object> conf;
-    protected Configuration loginConf;
     private int port;
 
     @Override
-    public void prepare(ThriftConnectionType type, Map<String, Object> conf, Configuration loginConf) {
+    public void prepare(ThriftConnectionType type, Map<String, Object> conf) {
         this.type = type;
         this.conf = conf;
-        this.loginConf = loginConf;
     }
 
     @Override
     public TServer getServer(TProcessor processor) throws IOException, TTransportException {
         int configuredPort = type.getPort(conf);
         Integer socketTimeout = type.getSocketTimeOut(conf);
-        TTransportFactory serverTransportFactory = getServerTransportFactory();
+        TTransportFactory serverTransportFactory = getServerTransportFactory(type.isImpersonationAllowed());
         TServerSocket serverTransport = null;
         if (socketTimeout != null) {
             serverTransport = new TServerSocket(configuredPort, socketTimeout);
@@ -88,23 +81,30 @@ public abstract class SaslTransportPlugin implements ITransportPlugin {
         if (serverTransportFactory != null) {
             serverArgs.transportFactory(serverTransportFactory);
         }
-        BlockingQueue workQueue = new SynchronousQueue();
+        BlockingQueue<Runnable> workQueue = new SynchronousQueue<>();
         if (queueSize != null) {
-            workQueue = new ArrayBlockingQueue(queueSize);
+            workQueue = new ArrayBlockingQueue<>(queueSize);
         }
         ThreadPoolExecutor executorService = new ExtendedThreadPoolExecutor(numWorkerThreads, numWorkerThreads,
-            60, TimeUnit.SECONDS, workQueue);
+                                                                            60, TimeUnit.SECONDS, workQueue);
         serverArgs.executorService(executorService);
         return new TThreadPoolServer(serverArgs);
     }
 
+    @Override
+    public void close() {
+    }
+
     /**
      * Create the transport factory needed for serving.  All subclass must implement this method.
+     *
+     * @param impersonationAllowed true if SASL impersonation should be allowed, else false.
      * @return server transport factory
+     *
      * @throws IOException on any error.
      */
-    protected abstract TTransportFactory getServerTransportFactory() throws IOException;
-    
+    protected abstract TTransportFactory getServerTransportFactory(boolean impersonationAllowed) throws IOException;
+
     @Override
     public int getPort() {
         return this.port;
@@ -112,10 +112,10 @@ public abstract class SaslTransportPlugin implements ITransportPlugin {
 
 
     /**
-     * Processor that pulls the SaslServer object out of the transport, and
-     * assumes the remote user's UGI before calling through to the original
-     * processor. This is used on the server side to set the UGI for each specific call.
+     * Processor that pulls the SaslServer object out of the transport, and assumes the remote user's UGI before calling through to the
+     * original processor. This is used on the server side to set the UGI for each specific call.
      */
+    @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
     private static class TUGIWrapProcessor implements TProcessor {
         final TProcessor wrapped;
 
@@ -123,20 +123,21 @@ public abstract class SaslTransportPlugin implements ITransportPlugin {
             this.wrapped = wrapped;
         }
 
-        public boolean process(final TProtocol inProt, final TProtocol outProt) throws TException {
+        @Override
+        public void process(final TProtocol inProt, final TProtocol outProt) throws TException {
             //populating request context
             ReqContext reqContext = ReqContext.context();
 
             TTransport trans = inProt.getTransport();
             //Sasl transport
-            TSaslServerTransport saslTrans = (TSaslServerTransport)trans;
+            TSaslServerTransport saslTrans = (TSaslServerTransport) trans;
 
             if (trans instanceof NoOpTTrasport) {
-                return false;
+                return;
             }
 
             //remote address
-            TSocket tsocket = (TSocket)saslTrans.getUnderlyingTransport();
+            TSocket tsocket = (TSocket) saslTrans.getUnderlyingTransport();
             Socket socket = tsocket.getSocket();
             reqContext.setRemoteAddress(socket.getInetAddress());
 
@@ -148,7 +149,7 @@ public abstract class SaslTransportPlugin implements ITransportPlugin {
             reqContext.setSubject(remoteUser);
 
             //invoke service handler
-            return wrapped.process(inProt, outProt);
+            wrapped.process(inProt, outProt);
         }
     }
 
@@ -156,12 +157,13 @@ public abstract class SaslTransportPlugin implements ITransportPlugin {
         private final String name;
 
         public User(String name) {
-            this.name =  name;
+            this.name = name;
         }
 
         /**
          * Get the full name of the user.
          */
+        @Override
         public String getName() {
             return name;
         }

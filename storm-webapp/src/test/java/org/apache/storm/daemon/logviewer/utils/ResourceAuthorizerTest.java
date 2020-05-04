@@ -27,16 +27,19 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.storm.DaemonConfig;
 import org.apache.storm.daemon.logviewer.testsupport.ArgumentsVerifier;
 import org.apache.storm.utils.Utils;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 public class ResourceAuthorizerTest {
 
@@ -169,14 +172,43 @@ public class ResourceAuthorizerTest {
 
         verifyStubMethodsAreCalledProperly(authorizer);
     }
+    
+    /**
+     * disallow upward path traversal in filenames.
+     */
+    @Test
+    public void testFailOnUpwardPathTraversal() {
+        Map<String, Object> stormConf = Utils.readStormConfig();
+
+        Map<String, Object> conf = new HashMap<>(stormConf);
+
+        ResourceAuthorizer authorizer = new ResourceAuthorizer(conf);
+
+        Assertions.assertThrows(IllegalArgumentException.class, 
+            () -> authorizer.isAuthorizedLogUser("user", Paths.get("some/../path").toString()));   
+    }
 
     private void verifyStubMethodsAreCalledProperly(ResourceAuthorizer authorizer) {
         ArgumentsVerifier.verifyFirstCallArgsForSingleArgMethod(
-            captor -> verify(authorizer, times(2)).getLogUserGroupWhitelist(captor.capture()),
+            captor -> verify(authorizer).getLogUserGroupWhitelist(captor.capture()),
             String.class, "non-blank-fname");
 
         ArgumentsVerifier.verifyFirstCallArgsForSingleArgMethod(
             captor -> verify(authorizer).getUserGroups(captor.capture()),
             String.class, "alice");
+    }
+
+    @Test
+    public void authorizationFailsWhenFilterConfigured() {
+        Map<String, Object> stormConf = Utils.readStormConfig();
+        Map<String, Object> conf = new HashMap<>(stormConf);
+        ResourceAuthorizer authorizer = spy(new ResourceAuthorizer(conf));
+        Mockito.when(authorizer.isAuthorizedLogUser(anyString(), anyString())).thenReturn(false);
+        boolean authorized = authorizer.isUserAllowedToAccessFile("bob", "anyfile");
+        assertTrue(authorized); // no filter configured, allow anyone
+
+        conf.put(DaemonConfig.LOGVIEWER_FILTER, "someFilter");
+        authorized = authorizer.isUserAllowedToAccessFile("bob", "anyfile");
+        assertFalse(authorized); // filter configured, should fail all users
     }
 }

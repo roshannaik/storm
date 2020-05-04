@@ -18,19 +18,25 @@
 
 package org.apache.storm.healthcheck;
 
-import org.apache.storm.DaemonConfig;
-import org.apache.storm.utils.ServerConfigUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.codahale.metrics.Meter;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.channels.ClosedByInterruptException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.storm.Constants;
+import org.apache.storm.DaemonConfig;
+import org.apache.storm.metric.StormMetricsRegistry;
+import org.apache.storm.utils.ObjectReader;
+import org.apache.storm.utils.ServerConfigUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HealthChecker {
 
@@ -40,7 +46,7 @@ public class HealthChecker {
     private static final String TIMEOUT = "timeout";
     private static final String FAILED_WITH_EXIT_CODE = "failed_with_exit_code";
 
-    public static int healthCheck(Map<String, Object> conf) {
+    public static int healthCheck(Map<String, Object> conf, StormMetricsRegistry metricRegistry) {
         String healthDir = ServerConfigUtils.absoluteHealthCheckDir(conf);
         List<String> results = new ArrayList<>();
         if (healthDir != null) {
@@ -49,13 +55,15 @@ public class HealthChecker {
             if (parentFile.exists()) {
                 File[] list = parentFile.listFiles();
                 for (File f : list) {
-                    if (!f.isDirectory() && f.canExecute())
+                    if (!f.isDirectory() && f.canExecute()) {
                         healthScripts.add(f.getAbsolutePath());
+                    }
                 }
             }
             for (String script : healthScripts) {
                 String result = processScript(conf, script);
                 results.add(result);
+                LOG.info("The healthcheck script [ {} ] exited with status: {}", script, result);
             }
         }
 
@@ -64,9 +72,25 @@ public class HealthChecker {
         // to execute properly, not that the system is unhealthy, in which case
         // we don't want to start killing things.
 
-        if (results.contains(FAILED) || results.contains(TIMEOUT)) {
+        if (results.contains(FAILED) || results.contains(FAILED_WITH_EXIT_CODE)) {
+            LOG.warn("The supervisor healthchecks failed!!!");
             return 1;
+        } else if (results.contains(TIMEOUT)) {
+            LOG.warn("The supervisor healthchecks timedout!!!");
+            if (metricRegistry != null) {
+                Meter timeoutMeter = metricRegistry.getMeter(Constants.SUPERVISOR_HEALTH_CHECK_TIMEOUTS);
+                if (timeoutMeter != null) {
+                    timeoutMeter.mark();
+                }
+            }
+            Boolean failOnTimeouts = ObjectReader.getBoolean(conf.get(DaemonConfig.STORM_HEALTH_CHECK_FAIL_ON_TIMEOUTS), true);
+            if (failOnTimeouts) {
+                return 1;
+            } else {
+                return 0;
+            }
         } else {
+            LOG.info("The supervisor healthchecks succeeded.");
             return 0;
         }
 
@@ -76,7 +100,7 @@ public class HealthChecker {
         Thread interruptThread = null;
         try {
             Process process = Runtime.getRuntime().exec(script);
-            final long timeout = (long) (conf.get(DaemonConfig.STORM_HEALTH_CHECK_TIMEOUT_MS));
+            final long timeout = ObjectReader.getLong(conf.get(DaemonConfig.STORM_HEALTH_CHECK_TIMEOUT_MS), 5000L);
             final Thread curThread = Thread.currentThread();
             // kill process when timeout
             interruptThread = new Thread(new Runnable() {
@@ -96,27 +120,41 @@ public class HealthChecker {
             curThread.interrupted();
 
             if (process.exitValue() != 0) {
-                String str;
-                InputStream stdin = process.getInputStream();
-                BufferedReader reader = new BufferedReader(new InputStreamReader(stdin));
-                while ((str = reader.readLine()) != null) {
-                    if (str.startsWith("ERROR")) {
-                        return FAILED;
-                    }
+                String outMessage = readFromStream(process.getInputStream());
+                String errMessage = readFromStream(process.getErrorStream());
+
+                LOG.warn("The healthcheck process {} exited with code: {}; output: {}; err: {}.",
+                    script, process.exitValue(), outMessage, errMessage);
+
+                //Keep this for backwards compatibility.
+                //It relies on "ERROR" at the beginning of stdout to determine FAILED status
+                if (outMessage.startsWith("ERROR")) {
+                    return FAILED;
                 }
-                return SUCCESS;
+                return FAILED_WITH_EXIT_CODE;
             }
-            return FAILED_WITH_EXIT_CODE;
+            return SUCCESS;
         } catch (InterruptedException | ClosedByInterruptException e) {
             LOG.warn("Script:  {} timed out.", script);
             return TIMEOUT;
         } catch (Exception e) {
             LOG.warn("Script failed with exception: ", e);
-            return FAILED_WITH_EXIT_CODE;
+            return FAILED;
         } finally {
-            if (interruptThread != null)
+            if (interruptThread != null) {
                 interruptThread.interrupt();
+            }
         }
     }
 
+    private static String readFromStream(InputStream is) throws IOException {
+        StringBuilder stringBuilder = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
+            String str;
+            while ((str = reader.readLine()) != null) {
+                stringBuilder.append(str).append("\n");
+            }
+        }
+        return stringBuilder.toString().trim();
+    }
 }

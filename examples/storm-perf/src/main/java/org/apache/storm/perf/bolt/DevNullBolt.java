@@ -20,7 +20,6 @@ package org.apache.storm.perf.bolt;
 
 import java.util.Map;
 import java.util.concurrent.locks.LockSupport;
-
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -34,7 +33,7 @@ public class DevNullBolt extends BaseRichBolt {
     private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(DevNullBolt.class);
     private OutputCollector collector;
     private Long sleepNanos;
-    private int eCount = 0;
+    private int count = 0;
 
     @Override
     public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
@@ -48,7 +47,7 @@ public class DevNullBolt extends BaseRichBolt {
         if (sleepNanos > 0) {
             LockSupport.parkNanos(sleepNanos);
         }
-        ++eCount;
+        ++count;
     }
 
     @Override

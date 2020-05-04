@@ -20,7 +20,6 @@ package org.apache.storm.localizer;
 
 import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 
-import com.google.common.annotations.VisibleForTesting;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileOutputStream;
@@ -46,24 +45,25 @@ import java.util.stream.Collectors;
 import org.apache.commons.io.FileUtils;
 import org.apache.storm.Config;
 import org.apache.storm.blobstore.ClientBlobStore;
-import org.apache.storm.blobstore.InputStreamWithMeta;
 import org.apache.storm.daemon.supervisor.IAdvancedFSOps;
 import org.apache.storm.generated.AuthorizationException;
 import org.apache.storm.generated.KeyNotFoundException;
 import org.apache.storm.generated.ReadableBlobMeta;
+import org.apache.storm.metric.StormMetricsRegistry;
+import org.apache.storm.shade.com.google.common.annotations.VisibleForTesting;
+import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.ObjectReader;
 import org.apache.storm.utils.ServerUtils;
 import org.apache.storm.utils.ShellUtils;
+import org.apache.storm.utils.WrappedAuthorizationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Represents a resource that is localized on the supervisor.
- * A localized resource has a .current symlink to the current version file which is named
- * filename.{current version}. There is also a filename.version which contains the latest version.
+ * Represents a resource that is localized on the supervisor. A localized resource has a .current symlink to the current version file which
+ * is named filename.{current version}. There is also a filename.version which contains the latest version.
  */
 public class LocalizedResource extends LocallyCachedBlob {
-    private static final Logger LOG = LoggerFactory.getLogger(LocalizedResource.class);
     @VisibleForTesting
     static final String CURRENT_BLOB_SUFFIX = ".current";
     @VisibleForTesting
@@ -77,7 +77,36 @@ public class LocalizedResource extends LocallyCachedBlob {
     static final String FILESDIR = "files";
     @VisibleForTesting
     static final String ARCHIVESDIR = "archives";
+    private static final Logger LOG = LoggerFactory.getLogger(LocalizedResource.class);
     private static final String TO_UNCOMPRESS = "_tmp_";
+    private static final Pattern VERSION_FILE_PATTERN = Pattern.compile("^(.+)\\.(\\d+)$");
+    // filesystem path to the resource
+    private final Path baseDir;
+    private final Path versionFilePath;
+    private final Path symlinkPath;
+    private final boolean shouldUncompress;
+    private final IAdvancedFSOps fsOps;
+    private final String user;
+    private final Map<String, Object> conf;
+    private final boolean symLinksDisabled;
+    // size of the resource
+    private long size = -1;
+
+    LocalizedResource(String key, Path localBaseDir, boolean shouldUncompress, IAdvancedFSOps fsOps, Map<String, Object> conf,
+                      String user, StormMetricsRegistry metricRegistry) {
+        super(key + (shouldUncompress ? " archive" : " file"), key, metricRegistry);
+        Path base = getLocalUserFileCacheDir(localBaseDir, user);
+        this.baseDir = shouldUncompress ? getCacheDirForArchives(base) : getCacheDirForFiles(base);
+        this.conf = conf;
+        this.symLinksDisabled = (boolean) conf.getOrDefault(Config.DISABLE_SYMLINKS, false);
+        this.user = user;
+        this.fsOps = fsOps;
+        versionFilePath = constructVersionFileName(baseDir, key);
+        symlinkPath = constructBlobCurrentSymlinkName(baseDir, key);
+        this.shouldUncompress = shouldUncompress;
+        //Set the size in case we are recovering an already downloaded object
+        setSize();
+    }
 
     private static Path constructVersionFileName(Path baseDir, String key) {
         return baseDir.resolve(key + BLOB_VERSION_SUFFIX);
@@ -114,6 +143,9 @@ public class LocalizedResource extends LocallyCachedBlob {
     }
 
     static void completelyRemoveUnusedUser(Path localBaseDir, String user) throws IOException {
+        Path localUserDir = getLocalUserDir(localBaseDir, user);
+        LOG.info("completelyRemoveUnusedUser {} for directory {}", user, localUserDir);
+
         Path userFileCacheDir = getLocalUserFileCacheDir(localBaseDir, user);
         // baseDir/supervisor/usercache/user1/filecache/files
         Files.deleteIfExists(getCacheDirForFiles(userFileCacheDir));
@@ -122,7 +154,7 @@ public class LocalizedResource extends LocallyCachedBlob {
         // baseDir/supervisor/usercache/user1/filecache
         Files.deleteIfExists(userFileCacheDir);
         // baseDir/supervisor/usercache/user1
-        Files.deleteIfExists(getLocalUserDir(localBaseDir, user));
+        Files.deleteIfExists(localUserDir);
     }
 
     static List<String> getLocalizedArchiveKeys(Path localBaseDir, String user) throws IOException {
@@ -141,16 +173,16 @@ public class LocalizedResource extends LocallyCachedBlob {
             return Collections.emptyList();
         }
         return Files.list(dir)
-            .map((p) -> p.getFileName().toString())
-            .filter((name) -> name.toLowerCase().endsWith(CURRENT_BLOB_SUFFIX))
-            .map((key) -> {
-                int p = key.lastIndexOf('.');
-                if (p > 0) {
-                    key = key.substring(0, p);
-                }
-                return key;
-            })
-            .collect(Collectors.toList());
+                    .map((p) -> p.getFileName().toString())
+                    .filter((name) -> name.toLowerCase().endsWith(CURRENT_BLOB_SUFFIX))
+                    .map((key) -> {
+                        int p = key.lastIndexOf('.');
+                        if (p > 0) {
+                            key = key.substring(0, p);
+                        }
+                        return key;
+                    })
+                    .collect(Collectors.toList());
     }
 
     // baseDir/supervisor/usercache/
@@ -179,32 +211,6 @@ public class LocalizedResource extends LocallyCachedBlob {
         return dir.resolve(ARCHIVESDIR);
     }
 
-    // filesystem path to the resource
-    private final Path baseDir;
-    private final Path versionFilePath;
-    private final Path symlinkPath;
-    private final boolean uncompressed;
-    private final IAdvancedFSOps fsOps;
-    private final String user;
-    // size of the resource
-    private long size = -1;
-    private final Map<String, Object> conf;
-
-    LocalizedResource(String key, Path localBaseDir, boolean uncompressed, IAdvancedFSOps fsOps, Map<String, Object> conf,
-                             String user) {
-        super(key + (uncompressed ? " archive" : " file"), key);
-        Path base = getLocalUserFileCacheDir(localBaseDir, user);
-        this.baseDir = uncompressed ? getCacheDirForArchives(base) : getCacheDirForFiles(base);
-        this.conf = conf;
-        this.user = user;
-        this.fsOps = fsOps;
-        versionFilePath = constructVersionFileName(baseDir, key);
-        symlinkPath = constructBlobCurrentSymlinkName(baseDir, key);
-        this.uncompressed = uncompressed;
-        //Set the size in case we are recovering an already downloaded object
-        setSize();
-    }
-
     Path getCurrentSymlinkPath() {
         return symlinkPath;
     }
@@ -217,7 +223,7 @@ public class LocalizedResource extends LocallyCachedBlob {
     private void setSize() {
         // we trust that the file exists
         Path withVersion = getFilePathWithVersion();
-        size = ServerUtils.getDU(withVersion.toFile());
+        size = ServerUtils.getDiskUsage(withVersion.toFile());
         LOG.debug("size of {} is: {}", withVersion, size);
     }
 
@@ -237,52 +243,46 @@ public class LocalizedResource extends LocallyCachedBlob {
     }
 
     @Override
-    public long downloadToTempLocation(ClientBlobStore store) throws IOException, KeyNotFoundException, AuthorizationException {
+    public long fetchUnzipToTemp(ClientBlobStore store) throws IOException, KeyNotFoundException, AuthorizationException {
         String key = getKey();
         ReadableBlobMeta meta = store.getBlobMeta(key);
         if (!ServerUtils.canUserReadBlob(meta, user, conf)) {
-            throw new AuthorizationException(user + " does not have READ access to " + key);
+            throw new WrappedAuthorizationException(user + " does not have READ access to " + key);
         }
-        long version;
-        Path downloadFile;
-        Path finalLocation;
-        try (InputStreamWithMeta in = store.getBlob(key)) {
-            version = in.getVersion();
-            finalLocation = constructBlobWithVersionFileName(baseDir, getKey(), version);
-            if (uncompressed) {
+
+        DownloadMeta downloadMeta = fetch(store, key, v -> {
+                Path path = shouldUncompress ? tmpOutputLocation() : constructBlobWithVersionFileName(baseDir, getKey(), v);
                 // we need to download to temp file and then unpack into the one requested
-                downloadFile = tmpOutputLocation();
-            } else {
-                downloadFile = finalLocation;
-            }
-            byte[] buffer = new byte[1024];
-            int len;
-            LOG.debug("Downloading {} to {}", key, downloadFile);
-            Path parent = downloadFile.getParent();
-            if (!Files.exists(parent)) {
-                //There is a race here that we can still lose
-                try {
-                    Files.createDirectory(parent);
-                } catch (FileAlreadyExistsException e) {
-                    //Ignored
+                Path parent = path.getParent();
+                if (!Files.exists(parent)) {
+                    //There is a race here that we can still lose
+                    try {
+                        Files.createDirectories(parent);
+                    } catch (FileAlreadyExistsException e) {
+                        //Ignored
+                    } catch (IOException e) {
+                        LOG.error("Failed to create parent directory {}", parent, e);
+                        throw e;
+                    }
                 }
-            }
-            try (FileOutputStream out = new FileOutputStream(downloadFile.toFile())) {
-                while ((len = in.read(buffer)) >= 0) {
-                    out.write(buffer, 0, len);
-                }
-            }
-        }
-        if (uncompressed) {
-            ServerUtils.unpack(downloadFile.toFile(), finalLocation.toFile());
+                return path;
+            },
+            FileOutputStream::new
+        );
+
+        Path finalLocation = downloadMeta.getDownloadPath();
+        if (shouldUncompress) {
+            Path downloadFile = finalLocation;
+            finalLocation = constructBlobWithVersionFileName(baseDir, getKey(), downloadMeta.getVersion());
+            ServerUtils.unpack(downloadFile.toFile(), finalLocation.toFile(), symLinksDisabled);
             LOG.debug("Uncompressed {} to: {}", downloadFile, finalLocation);
         }
         setBlobPermissions(conf, user, finalLocation);
-        return version;
+        return downloadMeta.getVersion();
     }
 
     @Override
-    public void commitNewVersion(long version) throws IOException {
+    protected void commitNewVersion(long version) throws IOException {
         String key = getKey();
         LOG.info("Blob: {} updated to version {} from version {}", key, version, getLocalVersion());
         Path localVersionFile = versionFilePath;
@@ -314,7 +314,7 @@ public class LocalizedResource extends LocallyCachedBlob {
         }
         String wlCommand = ObjectReader.getString(conf.get(Config.SUPERVISOR_WORKER_LAUNCHER), "");
         if (wlCommand.isEmpty()) {
-            String stormHome = System.getProperty("storm.home");
+            String stormHome = System.getProperty(ConfigUtils.STORM_HOME);
             wlCommand = stormHome + "/bin/worker-launcher";
         }
         List<String> command = new ArrayList<>(Arrays.asList(wlCommand, user, "blob", path.toString()));
@@ -331,7 +331,7 @@ public class LocalizedResource extends LocallyCachedBlob {
             LOG.warn("Exit code from worker-launcher is: {}", exitCode, e);
             LOG.debug("output: {}", shExec.getOutput());
             throw new IOException("Setting blob permissions failed"
-                + " (exitCode=" + exitCode + ") with output: " + shExec.getOutput(), e);
+                                  + " (exitCode=" + exitCode + ") with output: " + shExec.getOutput(), e);
         }
     }
 
@@ -342,8 +342,6 @@ public class LocalizedResource extends LocallyCachedBlob {
     private Path tmpSymlinkLocation() {
         return baseDir.resolve(Paths.get(LocalizedResource.TO_UNCOMPRESS + getKey() + CURRENT_BLOB_SUFFIX));
     }
-
-    private static final Pattern VERSION_FILE_PATTERN = Pattern.compile("^(.+)\\.(\\d+)$");
 
     @Override
     public void cleanupOrphanedData() throws IOException {
@@ -405,7 +403,7 @@ public class LocalizedResource extends LocallyCachedBlob {
                 }
             }
         } catch (NoSuchFileException e) {
-            LOG.warn("Nothing to cleanup with badeDir {} even though we expected there to be something there", baseDir);
+            LOG.warn("Nothing to cleanup with baseDir {} even though we expected there to be something there", baseDir);
         }
     }
 
@@ -414,7 +412,7 @@ public class LocalizedResource extends LocallyCachedBlob {
         Path fileWithVersion = getFilePathWithVersion();
         Path currentSymLink = getCurrentSymlinkPath();
 
-        if (uncompressed) {
+        if (shouldUncompress) {
             if (Files.exists(fileWithVersion)) {
                 // this doesn't follow symlinks, which is what we want
                 FileUtils.deleteDirectory(fileWithVersion.toFile());
@@ -434,21 +432,26 @@ public class LocalizedResource extends LocallyCachedBlob {
     @Override
     public boolean isFullyDownloaded() {
         return Files.exists(getFilePathWithVersion())
-            && Files.exists(getCurrentSymlinkPath())
-            && Files.exists(versionFilePath);
+               && Files.exists(getCurrentSymlinkPath())
+               && Files.exists(versionFilePath);
     }
 
     @Override
     public boolean equals(Object other) {
         if (other instanceof LocalizedResource) {
-            LocalizedResource l = (LocalizedResource)other;
-            return getKey().equals(l.getKey()) && uncompressed == l.uncompressed && baseDir.equals(l.baseDir);
+            LocalizedResource l = (LocalizedResource) other;
+            return getKey().equals(l.getKey()) && shouldUncompress == l.shouldUncompress && baseDir.equals(l.baseDir);
         }
         return false;
     }
 
     @Override
     public int hashCode() {
-        return getKey().hashCode() + Boolean.hashCode(uncompressed) + baseDir.hashCode();
+        return getKey().hashCode() + Boolean.hashCode(shouldUncompress) + baseDir.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return this.user + ":" + getKey();
     }
 }

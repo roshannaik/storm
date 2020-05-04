@@ -1,54 +1,48 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
-package org.apache.storm.cluster;
 
-import org.apache.storm.Config;
-import org.apache.storm.generated.ClusterWorkerHeartbeat;
-import org.apache.storm.generated.ExecutorInfo;
-import org.apache.storm.generated.ExecutorStats;
-import org.apache.storm.generated.ProfileAction;
-import org.apache.storm.generated.WorkerTokenServiceType;
-import org.apache.storm.utils.Utils;
-import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.data.ACL;
-import org.apache.zookeeper.data.Id;
-import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
+package org.apache.storm.cluster;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.storm.Config;
+import org.apache.storm.assignments.ILocalAssignmentsBackend;
+import org.apache.storm.assignments.LocalAssignmentsBackendFactory;
+import org.apache.storm.generated.ClusterWorkerHeartbeat;
+import org.apache.storm.generated.ExecutorInfo;
+import org.apache.storm.generated.ExecutorStats;
+import org.apache.storm.generated.ProfileAction;
+import org.apache.storm.generated.WorkerTokenServiceType;
+import org.apache.storm.shade.org.apache.zookeeper.ZooDefs;
+import org.apache.storm.shade.org.apache.zookeeper.data.ACL;
+import org.apache.storm.shade.org.apache.zookeeper.data.Id;
+import org.apache.storm.shade.org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
+import org.apache.storm.utils.Utils;
 
 public class ClusterUtils {
 
     public static final String ZK_SEPERATOR = "/";
 
     public static final String ASSIGNMENTS_ROOT = "assignments";
-    public static final String CODE_ROOT = "code";
     public static final String STORMS_ROOT = "storms";
     public static final String SUPERVISORS_ROOT = "supervisors";
     public static final String WORKERBEATS_ROOT = "workerbeats";
     public static final String BACKPRESSURE_ROOT = "backpressure";
+    public static final String LEADERINFO_ROOT = "leader-info";
     public static final String ERRORS_ROOT = "errors";
     public static final String BLOBSTORE_ROOT = "blobstore";
     public static final String BLOBSTORE_MAX_KEY_SEQUENCE_NUMBER_ROOT = "blobstoremaxkeysequencenumber";
@@ -63,6 +57,7 @@ public class ClusterUtils {
     public static final String SUPERVISORS_SUBTREE = ZK_SEPERATOR + SUPERVISORS_ROOT;
     public static final String WORKERBEATS_SUBTREE = ZK_SEPERATOR + WORKERBEATS_ROOT;
     public static final String BACKPRESSURE_SUBTREE = ZK_SEPERATOR + BACKPRESSURE_ROOT;
+    public static final String LEADERINFO_SUBTREE = ZK_SEPERATOR + LEADERINFO_ROOT;
     public static final String ERRORS_SUBTREE = ZK_SEPERATOR + ERRORS_ROOT;
     public static final String BLOBSTORE_SUBTREE = ZK_SEPERATOR + BLOBSTORE_ROOT;
     public static final String BLOBSTORE_MAX_KEY_SEQUENCE_NUMBER_SUBTREE = ZK_SEPERATOR + BLOBSTORE_MAX_KEY_SEQUENCE_NUMBER_ROOT;
@@ -78,8 +73,8 @@ public class ClusterUtils {
     private static ClusterUtils _instance = INSTANCE;
 
     /**
-     * Provide an instance of this class for delegates to use. To mock out delegated methods, provide an instance of a subclass that overrides the
-     * implementation of the delegated method.
+     * Provide an instance of this class for delegates to use. To mock out delegated methods, provide an instance of a subclass that
+     * overrides the implementation of the delegated method.
      *
      * @param u a Cluster instance
      */
@@ -88,21 +83,47 @@ public class ClusterUtils {
     }
 
     /**
-     * Resets the singleton instance to the default. This is helpful to reset the class to its original functionality when mocking is no longer desired.
+     * Resets the singleton instance to the default. This is helpful to reset the class to its original functionality when mocking is no
+     * longer desired.
      */
     public static void resetInstance() {
         _instance = INSTANCE;
     }
 
-    public static List<ACL> mkTopoOnlyAcls(Map<String, Object> topoConf) throws NoSuchAlgorithmException {
+    /**
+     * Get ZK ACLs for a topology to have read/write access.
+     *
+     * @param topoConf the topology config.
+     * @return the ACLs.
+     */
+    public static List<ACL> mkTopoReadWriteAcls(Map<String, Object> topoConf) {
+        return mkTopoAcls(topoConf, ZooDefs.Perms.ALL);
+    }
+
+    /**
+     * Get ZK ACLs for a topology to have read only access.
+     *
+     * @param topoConf the topology config.
+     * @return the ACLs.
+     */
+    public static List<ACL> mkTopoReadOnlyAcls(Map<String, Object> topoConf) {
+        return mkTopoAcls(topoConf, ZooDefs.Perms.READ);
+    }
+
+    private static List<ACL> mkTopoAcls(Map<String, Object> topoConf, int perms) {
         List<ACL> aclList = null;
         String payload = (String) topoConf.get(Config.STORM_ZOOKEEPER_TOPOLOGY_AUTH_PAYLOAD);
         if (Utils.isZkAuthenticationConfiguredTopology(topoConf)) {
             aclList = new ArrayList<>();
             ACL acl1 = ZooDefs.Ids.CREATOR_ALL_ACL.get(0);
             aclList.add(acl1);
-            ACL acl2 = new ACL(ZooDefs.Perms.READ, new Id("digest", DigestAuthenticationProvider.generateDigest(payload)));
-            aclList.add(acl2);
+            try {
+                ACL acl2 = new ACL(perms, new Id("digest", DigestAuthenticationProvider.generateDigest(payload)));
+                aclList.add(acl2);
+            } catch (NoSuchAlgorithmException e) {
+                //Should only happen on a badly configured system
+                throw new RuntimeException(e);
+            }
         }
         return aclList;
     }
@@ -149,7 +170,8 @@ public class ClusterUtils {
 
     /**
      * Get the backpressure znode full path.
-     * @param stormId The topology id
+     *
+     * @param stormId   The topology id
      * @param shortPath A string in the form of "node-port"
      * @return The backpressure znode path
      */
@@ -162,11 +184,7 @@ public class ClusterUtils {
     }
 
     public static String errorPath(String stormId, String componentId) {
-        try {
-            return errorStormRoot(stormId) + ZK_SEPERATOR + URLEncoder.encode(componentId, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            throw Utils.wrapInRuntime(e);
-        }
+        return errorStormRoot(stormId) + ZK_SEPERATOR + Utils.urlEncodeUtf8(componentId);
     }
 
     public static String lastErrorPath(String stormId, String componentId) {
@@ -179,6 +197,7 @@ public class ClusterUtils {
 
     /**
      * Get the path to the log config for a topology.
+     *
      * @param stormId the topology id.
      * @return the path to the config.
      */
@@ -196,6 +215,7 @@ public class ClusterUtils {
 
     /**
      * Get the base path where secret keys are stored for a given service.
+     *
      * @param type the service we are interested in.
      * @return the path to that service root.
      */
@@ -204,8 +224,9 @@ public class ClusterUtils {
     }
 
     /**
-     * Get the path to secret keys for a specific topology
-     * @param type the service the secret is for.
+     * Get the path to secret keys for a specific topology.
+     *
+     * @param type       the service the secret is for.
      * @param topologyId the topology the secret is for.
      * @return the path to the list of secret keys.
      */
@@ -215,9 +236,10 @@ public class ClusterUtils {
 
     /**
      * Get the path to a specific secret key.
-     * @param type the service the secret is for.
+     *
+     * @param type       the service the secret is for.
      * @param topologyId the topology the secret is for.
-     * @param version the version the secret is for.
+     * @param version    the version the secret is for.
      * @return the path to the secret.
      */
     public static String secretKeysPath(WorkerTokenServiceType type, String topologyId, long version) {
@@ -232,12 +254,10 @@ public class ClusterUtils {
     }
 
     /**
-     * Ensures that we only return heartbeats for executors assigned to this worker
-     * @param executors
-     * @param workerHeartbeat
-     * @return
+     * Ensures that we only return heartbeats for executors assigned to this worker.
      */
-    public static Map<ExecutorInfo, ExecutorBeat> convertExecutorBeats(List<ExecutorInfo> executors, ClusterWorkerHeartbeat workerHeartbeat) {
+    public static Map<ExecutorInfo, ExecutorBeat> convertExecutorBeats(List<ExecutorInfo> executors,
+                                                                       ClusterWorkerHeartbeat workerHeartbeat) {
         Map<ExecutorInfo, ExecutorBeat> executorWhb = new HashMap<>();
         Map<ExecutorInfo, ExecutorStats> executorStatsMap = workerHeartbeat.get_executor_stats();
         for (ExecutorInfo executor : executors) {
@@ -252,16 +272,40 @@ public class ClusterUtils {
         return executorWhb;
     }
 
-    public IStormClusterState mkStormClusterStateImpl(Object stateStorage, ClusterStateContext context) throws Exception {
+    public static IStateStorage mkStateStorage(Map<String, Object> config, Map<String, Object> authConf,
+                                               ClusterStateContext context) throws Exception {
+        return _instance.mkStateStorageImpl(config, authConf, context);
+    }
+
+    public static IStormClusterState mkStormClusterState(Object stateStorage, ILocalAssignmentsBackend backend,
+                                                         ClusterStateContext context) throws Exception {
+        return _instance.mkStormClusterStateImpl(stateStorage, backend, context);
+    }
+
+    public static IStormClusterState mkStormClusterState(Object stateStorage, ClusterStateContext context) throws Exception {
+        return _instance.mkStormClusterStateImpl(stateStorage, LocalAssignmentsBackendFactory.getDefault(), context);
+    }
+
+    public static String stringifyError(Throwable error) {
+        StringWriter result = new StringWriter();
+        PrintWriter printWriter = new PrintWriter(result);
+        error.printStackTrace(printWriter);
+        return result.toString();
+    }
+
+    public IStormClusterState mkStormClusterStateImpl(Object stateStorage, ILocalAssignmentsBackend backend,
+                                                      ClusterStateContext context) throws Exception {
         if (stateStorage instanceof IStateStorage) {
-            return new StormClusterStateImpl((IStateStorage) stateStorage, context, false);
+            return new StormClusterStateImpl((IStateStorage) stateStorage, backend, context, false);
         } else {
-            IStateStorage Storage = _instance.mkStateStorageImpl((Map) stateStorage, (Map) stateStorage, context);
-            return new StormClusterStateImpl(Storage, context, true);
+            IStateStorage storage = _instance.mkStateStorageImpl((Map<String, Object>) stateStorage,
+                                                                 (Map<String, Object>) stateStorage, context);
+            return new StormClusterStateImpl(storage, backend, context, true);
         }
     }
 
-    public IStateStorage mkStateStorageImpl(Map<String, Object> config, Map auth_conf, ClusterStateContext context) throws Exception {
+    public IStateStorage mkStateStorageImpl(Map<String, Object> config, Map<String, Object> authConf, ClusterStateContext context) throws
+        Exception {
         String className = null;
         IStateStorage stateStorage = null;
         if (config.get(Config.STORM_CLUSTER_STATE_STORE) != null) {
@@ -271,22 +315,7 @@ public class ClusterUtils {
         }
         Class clazz = Class.forName(className);
         StateStorageFactory storageFactory = (StateStorageFactory) clazz.newInstance();
-        stateStorage = storageFactory.mkStore(config, auth_conf, context);
+        stateStorage = storageFactory.mkStore(config, authConf, context);
         return stateStorage;
-    }
-
-    public static IStateStorage mkStateStorage(Map<String, Object> config, Map auth_conf, ClusterStateContext context) throws Exception {
-        return _instance.mkStateStorageImpl(config, auth_conf, context);
-    }
-
-    public static IStormClusterState mkStormClusterState(Object StateStorage, ClusterStateContext context) throws Exception {
-        return _instance.mkStormClusterStateImpl(StateStorage, context);
-    }
-
-    public static String stringifyError(Throwable error) {
-        StringWriter result = new StringWriter();
-        PrintWriter printWriter = new PrintWriter(result);
-        error.printStackTrace(printWriter);
-        return result.toString();
     }
 }

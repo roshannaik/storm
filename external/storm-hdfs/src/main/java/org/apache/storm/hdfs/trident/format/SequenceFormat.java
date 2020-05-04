@@ -15,43 +15,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.storm.hdfs.trident.format;
 
+import java.io.Serializable;
 import org.apache.hadoop.io.Writable;
 import org.apache.storm.trident.tuple.TridentTuple;
 
-import java.io.Serializable;
-
 /**
  * Interface for converting <code>TridentTuple</code> objects to HDFS sequence file key-value pairs.
- *
  */
 public interface SequenceFormat extends Serializable {
     /**
-     * Key class used by implementation (e.g. IntWritable.class, etc.)
-     *
-     * @return
+     * Key class used by implementation (e.g. IntWritable.class, etc.).
      */
     Class keyClass();
 
     /**
-     * Value class used by implementation (e.g. Text.class, etc.)
-     * @return
+     * Value class used by implementation (e.g. Text.class, etc.).
      */
     Class valueClass();
 
     /**
      * Given a tuple, return the key that should be written to the sequence file.
-     *
-     * @param tuple
-     * @return
      */
     Writable key(TridentTuple tuple);
 
     /**
      * Given a tuple, return the value that should be written to the sequence file.
-     * @param tuple
-     * @return
      */
     Writable value(TridentTuple tuple);
 }

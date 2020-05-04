@@ -19,7 +19,6 @@
 package org.apache.storm.perf;
 
 import java.util.Map;
-
 import org.apache.storm.Config;
 import org.apache.storm.generated.StormTopology;
 import org.apache.storm.perf.bolt.CountBolt;
@@ -44,7 +43,7 @@ public class SimplifiedWordCountTopo {
     public static final int DEFAULT_COUNT_BOLT_NUM = 1;
 
 
-    static StormTopology getTopology(Map config) {
+    static StormTopology getTopology(Map<String, Object> config) {
 
         final int spoutNum = Helper.getInt(config, SPOUT_NUM, DEFAULT_SPOUT_NUM);
         final int cntBoltNum = Helper.getInt(config, BOLT_NUM, DEFAULT_COUNT_BOLT_NUM);

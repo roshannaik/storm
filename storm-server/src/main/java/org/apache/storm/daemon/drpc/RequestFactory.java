@@ -15,10 +15,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.storm.daemon.drpc;
 
 import org.apache.storm.generated.DRPCRequest;
 
 public interface RequestFactory<T extends OutstandingRequest> {
-    public T mkRequest(String function, DRPCRequest req); 
+
+    T mkRequest(String function, DRPCRequest req);
 }

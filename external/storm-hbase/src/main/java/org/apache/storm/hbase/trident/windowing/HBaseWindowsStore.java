@@ -1,35 +1,16 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  * <p/>
  * http://www.apache.org/licenses/LICENSE-2.0
  * <p/>
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the specific language governing permissions
+ * and limitations under the License.
  */
-package org.apache.storm.hbase.trident.windowing;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HTable;
-import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.Scan;
-import org.apache.hadoop.hbase.filter.FirstKeyOnlyFilter;
-import org.apache.storm.trident.windowing.WindowKryoSerializer;
-import org.apache.storm.trident.windowing.WindowsStore;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+package org.apache.storm.hbase.trident.windowing;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -41,39 +22,53 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.ConnectionFactory;
+import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.Table;
+import org.apache.hadoop.hbase.filter.FirstKeyOnlyFilter;
+import org.apache.storm.trident.windowing.WindowKryoSerializer;
+import org.apache.storm.trident.windowing.WindowsStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class stores entries into hbase instance of the given configuration.
- *
  */
 public class HBaseWindowsStore implements WindowsStore {
-    private static final Logger LOG = LoggerFactory.getLogger(HBaseWindowsStore.class);
     public static final String UTF_8 = "utf-8";
-
-    private final ThreadLocal<HTable> threadLocalHtable;
+    private static final Logger LOG = LoggerFactory.getLogger(HBaseWindowsStore.class);
+    private final ThreadLocal<Table> threadLocalHtable;
     private final ThreadLocal<WindowKryoSerializer> threadLocalWindowKryoSerializer;
-    private final Queue<HTable> htables = new ConcurrentLinkedQueue<>();
+    private final Queue<Table> htables = new ConcurrentLinkedQueue<>();
     private final byte[] family;
     private final byte[] qualifier;
 
-    public HBaseWindowsStore(final Map<String, Object> topoConf, final Configuration config, final String tableName, byte[] family, byte[] qualifier) {
+    public HBaseWindowsStore(final Map<String, Object> topoConf, final Configuration config, final String tableName, byte[] family,
+                             byte[] qualifier) {
         this.family = family;
         this.qualifier = qualifier;
 
-        threadLocalHtable = new ThreadLocal<HTable>() {
+        threadLocalHtable = new ThreadLocal<Table>() {
             @Override
-            protected HTable initialValue() {
+            protected Table initialValue() {
                 try {
-                    HTable hTable = new HTable(config, tableName);
-                    htables.add(hTable);
-                    return hTable;
+                    Table table = ConnectionFactory.createConnection(config).getTable(TableName.valueOf(tableName));
+                    htables.add(table);
+                    return table;
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
             }
         };
 
-        threadLocalWindowKryoSerializer = new ThreadLocal<WindowKryoSerializer>(){
+        threadLocalWindowKryoSerializer = new ThreadLocal<WindowKryoSerializer>() {
             @Override
             protected WindowKryoSerializer initialValue() {
                 return new WindowKryoSerializer(topoConf);
@@ -82,7 +77,7 @@ public class HBaseWindowsStore implements WindowsStore {
 
     }
 
-    private HTable htable() {
+    private Table htable() {
         return threadLocalHtable.get();
     }
 
@@ -111,7 +106,7 @@ public class HBaseWindowsStore implements WindowsStore {
             throw new RuntimeException(e);
         }
 
-        if(result.isEmpty()) {
+        if (result.isEmpty()) {
             return null;
         }
 
@@ -136,11 +131,11 @@ public class HBaseWindowsStore implements WindowsStore {
         }
 
         List<Object> values = new ArrayList<>();
-        for (int i=0; i<results.length; i++) {
+        for (int i = 0; i < results.length; i++) {
             Result result = results[i];
-            if(result.isEmpty()) {
+            if (result.isEmpty()) {
                 LOG.error("Got empty result for key [{}]", keys.get(i));
-                throw new RuntimeException("Received empty result for key: "+keys.get(i));
+                throw new RuntimeException("Received empty result for key: " + keys.get(i));
             }
             Object resultObject = windowKryoSerializer().deserialize(result.getValue(family, qualifier));
             values.add(resultObject);
@@ -200,8 +195,8 @@ public class HBaseWindowsStore implements WindowsStore {
         WindowsStore.Entry.nonNullCheckForKey(key);
         WindowsStore.Entry.nonNullCheckForValue(value);
 
-        if(value == null) {
-            throw new IllegalArgumentException("Invalid value of null with key: "+key);
+        if (value == null) {
+            throw new IllegalArgumentException("Invalid value of null with key: " + key);
         }
         Put put = new Put(effectiveKey(key));
         put.addColumn(family, ByteBuffer.wrap(qualifier), System.currentTimeMillis(), windowKryoSerializer().serializeToByteBuffer(value));
@@ -217,7 +212,8 @@ public class HBaseWindowsStore implements WindowsStore {
         List<Put> list = new ArrayList<>();
         for (Entry entry : entries) {
             Put put = new Put(effectiveKey(entry.key));
-            put.addColumn(family, ByteBuffer.wrap(qualifier), System.currentTimeMillis(), windowKryoSerializer().serializeToByteBuffer(entry.value));
+            put.addColumn(family, ByteBuffer.wrap(qualifier), System.currentTimeMillis(),
+                          windowKryoSerializer().serializeToByteBuffer(entry.value));
             list.add(put);
         }
 
@@ -259,7 +255,7 @@ public class HBaseWindowsStore implements WindowsStore {
     @Override
     public void shutdown() {
         // close all the created hTable instances
-        for (HTable htable : htables) {
+        for (Table htable : htables) {
             try {
                 htable.close();
             } catch (IOException e) {

@@ -30,6 +30,15 @@ public class ThroughputMeter {
         this.startTime = System.currentTimeMillis();
     }
 
+    /**
+     * Calculate throughput.
+     * @return events/sec
+     */
+    private static double calcThroughput(long count, long startTime, long endTime) {
+        long gap = (endTime - startTime);
+        return (count / gap) * 1000;
+    }
+
     public String getName() {
         return name;
     }
@@ -60,13 +69,5 @@ public class ThroughputMeter {
         startTime = currTime;
         count = 0;
         return result;
-    }
-
-    /**
-     * @return events/sec
-     */
-    private static double calcThroughput(long count, long startTime, long endTime) {
-        long gap = (endTime - startTime);
-        return (count / gap) * 1000;
     }
 }

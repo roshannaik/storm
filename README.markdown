@@ -2,7 +2,7 @@ Master Branch:
 [![Travis CI](https://travis-ci.org/apache/storm.svg?branch=master)](https://travis-ci.org/apache/storm)
 [![Maven Version](https://maven-badges.herokuapp.com/maven-central/org.apache.storm/storm-core/badge.svg)](http://search.maven.org/#search|gav|1|g:"org.apache.storm"%20AND%20a:"storm-core")
  
-Storm is a distributed realtime computation system. Similar to how Hadoop provides a set of general primitives for doing batch processing, Storm provides a set of general primitives for doing realtime computation. Storm is simple, can be used with any programming language, [is used by many companies](http://storm.apache.org/documentation/Powered-By.html), and is a lot of fun to use!
+Storm is a distributed realtime computation system. Similar to how Hadoop provides a set of general primitives for doing batch processing, Storm provides a set of general primitives for doing realtime computation. Storm is simple, can be used with any programming language, [is used by many companies](http://storm.apache.org/Powered-By.html), and is a lot of fun to use!
 
 The [Rationale page](http://storm.apache.org/documentation/Rationale.html) explains what Storm is and why it was built. [This presentation](http://vimeo.com/40972420) is also a good introduction to the project.
 
@@ -13,7 +13,7 @@ Storm has a website at [storm.apache.org](http://storm.apache.org). Follow [@sto
 Documentation and tutorials can be found on the [Storm website](http://storm.apache.org/documentation/Home.html).
 
 Developers and contributors should also take a look at our [Developer documentation](DEVELOPER.md).
-
+ 
 
 ## Getting help
 
@@ -76,6 +76,8 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 
+The LICENSE and NOTICE files cover the source distributions. The LICENSE-binary and NOTICE-binary files cover the binary distributions. The DEPENDENCY-LICENSES file lists the licenses of all dependencies of Storm, including those not packaged in the source or binary distributions, such as dependencies of optional connector modules.
+
 
 ## Project lead
 
@@ -94,7 +96,7 @@ under the License.
 * Michael G. Noll ([@miguno](https://github.com/miguno))
 * Kishor Patil ([@kishorvpatil](https://github.com/kishorvpatil))
 * Sriharsha Chintalapani([@harshach](https://github.com/harshach))
-* Sean Zhong ([@clockfly] (http://github.com/clockfly))
+* Sean Zhong ([@clockfly](http://github.com/clockfly))
 * Kyle Nusbaum ([@knusbaum](https://github.com/knusbaum))
 * Parth Brahmbhatt ([@Parth-Brahmbhatt](https://github.com/Parth-Brahmbhatt))
 * Jungtaek Lim ([@HeartSaVioR](https://github.com/HeartSaVioR))
@@ -112,6 +114,9 @@ under the License.
 * Xin Wang ([@vesense](https://github.com/vesense))
 * Hugo da Cruz Louro ([@hmcl](https://github.com/hmcl))
 * Stig Rohde Døssing ([@srdo](https://github.com/srdo/))
+* Roshan Naik ([@roshannaik](http://github.com/roshannaik))
+* Ethan Li ([@Ethanlm](https://github.com/Ethanlm))
+* Govind Menon ([@govind](https://github.com/govind-menon))
 
 ## Acknowledgements
 

@@ -18,14 +18,13 @@
 
 package org.apache.storm.redis.common.adapter;
 
+import java.io.Closeable;
+import java.io.IOException;
+import java.util.Map;
 import org.apache.storm.redis.common.commands.RedisCommands;
 import redis.clients.jedis.JedisCluster;
 import redis.clients.jedis.ScanParams;
 import redis.clients.jedis.ScanResult;
-
-import java.io.Closeable;
-import java.io.IOException;
-import java.util.Map;
 
 /**
  * Adapter class to make JedisCluster instance play with BinaryRedisCommands interface.
@@ -48,12 +47,27 @@ public class RedisCommandsAdapterJedisCluster implements RedisCommands, Closeabl
     }
 
     @Override
+    public boolean exists(String key) {
+        return jedisCluster.exists(key);
+    }
+
+    @Override
     public String hmset(byte[] key, Map<byte[], byte[]> fieldValues) {
         return jedisCluster.hmset(key, fieldValues);
     }
 
     @Override
+    public String hmset(String key, Map<String, String> fieldValues) {
+        return jedisCluster.hmset(key, fieldValues);
+    }
+
+    @Override
     public Map<byte[], byte[]> hgetAll(byte[] key) {
+        return jedisCluster.hgetAll(key);
+    }
+
+    @Override
+    public Map<String, String> hgetAll(String key) {
         return jedisCluster.hgetAll(key);
     }
 
@@ -85,21 +99,6 @@ public class RedisCommandsAdapterJedisCluster implements RedisCommands, Closeabl
     @Override
     public ScanResult<Map.Entry<byte[], byte[]>> hscan(byte[] key, byte[] cursor, ScanParams params) {
         return jedisCluster.hscan(key, cursor, params);
-    }
-
-    @Override
-    public boolean exists(String key) {
-        return jedisCluster.exists(key);
-    }
-
-    @Override
-    public Map<String, String> hgetAll(String key) {
-        return jedisCluster.hgetAll(key);
-    }
-
-    @Override
-    public String hmset(String key, Map<String, String> fieldValues) {
-        return jedisCluster.hmset(key, fieldValues);
     }
 
     @Override

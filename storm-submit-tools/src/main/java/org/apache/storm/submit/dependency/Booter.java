@@ -18,14 +18,14 @@
 
 package org.apache.storm.submit.dependency;
 
+import java.io.File;
+
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.LocalRepository;
 import org.eclipse.aether.repository.RemoteRepository;
-
-import java.io.File;
 
 /**
  * Manage mvn repository.
@@ -47,7 +47,7 @@ public class Booter {
     }
 
     public static RemoteRepository newCentralRepository() {
-        return new RemoteRepository.Builder("central", "default", "http://repo1.maven.org/maven2/").build();
+        return new RemoteRepository.Builder("central", "default", "https://repo1.maven.org/maven2/").build();
     }
 
     public static RemoteRepository newLocalRepository() {

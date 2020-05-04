@@ -1,22 +1,20 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
+
 package org.apache.storm.trident.operation.impl;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.apache.storm.trident.JoinType;
 import org.apache.storm.trident.operation.GroupedMultiReducer;
 import org.apache.storm.trident.operation.TridentCollector;
@@ -25,42 +23,38 @@ import org.apache.storm.trident.tuple.ComboList;
 import org.apache.storm.trident.tuple.TridentTuple;
 import org.apache.storm.tuple.Fields;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
 public class PreservingFieldsOrderJoinerMultiReducer implements GroupedMultiReducer<JoinState> {
-    List<JoinType> _types;
-    List<Fields> _sideFields;
-    List<Fields> _joiningFields;
-    List<Fields> _originFields;
-    int _numGroupFields;
-    ComboList.Factory _factory;
+    List<JoinType> types;
+    List<Fields> sideFields;
+    List<Fields> joiningFields;
+    List<Fields> originFields;
+    int numGroupFields;
+    ComboList.Factory factory;
 
 
     public PreservingFieldsOrderJoinerMultiReducer(List<JoinType> types, int numGroupFields, List<Fields> origins,
                                                    List<Fields> joins, List<Fields> sides) {
-        _types = types;
-        _originFields = origins;
-        _joiningFields = joins;
-        _sideFields = sides;
+        this.types = types;
+        originFields = origins;
+        joiningFields = joins;
+        sideFields = sides;
 
         // we already checked this
-        _numGroupFields = numGroupFields;
+        this.numGroupFields = numGroupFields;
     }
 
     @Override
     public void prepare(Map<String, Object> conf, TridentMultiReducerContext context) {
-        int[] sizes = new int[_originFields.size()];
-        for (int i = 0; i < _originFields.size(); i++) {
-            sizes[i] = _originFields.get(i).size();
+        int[] sizes = new int[originFields.size()];
+        for (int i = 0; i < originFields.size(); i++) {
+            sizes[i] = originFields.get(i).size();
         }
-        _factory = new ComboList.Factory(sizes);
+        factory = new ComboList.Factory(sizes);
     }
 
     @Override
     public JoinState init(TridentCollector collector, TridentTuple group) {
-        return new JoinState(_types.size(), group);
+        return new JoinState(types.size(), group);
     }
 
     @Override
@@ -83,7 +77,7 @@ public class PreservingFieldsOrderJoinerMultiReducer implements GroupedMultiRedu
         List<List>[] sides = state.sides;
         boolean wasEmpty = state.numSidesReceived < sides.length;
         for (int i = 0; i < sides.length; i++) {
-            if(sides[i].isEmpty() && _types.get(i) == JoinType.OUTER) {
+            if (sides[i].isEmpty() && types.get(i) == JoinType.OUTER) {
                 state.numSidesReceived++;
                 sides[i].add(null);
             }
@@ -111,7 +105,7 @@ public class PreservingFieldsOrderJoinerMultiReducer implements GroupedMultiRedu
         for (int i = 0; i < indices.length; i++) {
             indices[i] = 0;
         }
-        
+
         boolean keepGoing = true;
         //emit cross-join of all emitted tuples
         while (keepGoing) {
@@ -121,7 +115,7 @@ public class PreservingFieldsOrderJoinerMultiReducer implements GroupedMultiRedu
                 List<Object> values = buildValuesForStream(state, overrideIndex, overrideTuple, sides, indices, combined, i);
                 combined[i] = values;
             }
-            collector.emit(_factory.create(combined));
+            collector.emit(factory.create(combined));
             keepGoing = increment(sides, indices, indices.length - 1, overrideIndex);
         }
     }
@@ -135,16 +129,16 @@ public class PreservingFieldsOrderJoinerMultiReducer implements GroupedMultiRedu
             sideValues = sides[streamIdx].get(indices[streamIdx]);
         }
 
-        Fields originFields = _originFields.get(streamIdx);
+        Fields originFields = this.originFields.get(streamIdx);
         if (sideValues == null) {
             return makeNullList(originFields.size());
         } else {
             List<Object> ret = new ArrayList<>(originFields.size());
-            Fields sideFields = _sideFields.get(streamIdx);
-            Fields joinFields = _joiningFields.get(streamIdx);
+            Fields sideFields = this.sideFields.get(streamIdx);
+            Fields joinFields = joiningFields.get(streamIdx);
             int sideIdx = 0;
             for (String field : originFields) {
-                // assuming _sideFields are preserving its order
+                // assuming sideFields are preserving its order
                 if (sideFields.contains(field)) {
                     ret.add(sideValues.get(sideIdx++));
                 } else {
@@ -160,14 +154,16 @@ public class PreservingFieldsOrderJoinerMultiReducer implements GroupedMultiRedu
     //return false if can't increment anymore
     //TODO: DRY this code up with what's in ChainedAggregatorImpl
     private boolean increment(List[] lengths, int[] indices, int j, int overrideIndex) {
-        if (j == -1) return false;
+        if (j == -1) {
+            return false;
+        }
         if (j == overrideIndex) {
-            return increment(lengths, indices, j-1, overrideIndex);
+            return increment(lengths, indices, j - 1, overrideIndex);
         }
         indices[j]++;
         if (indices[j] >= lengths[j].size()) {
             indices[j] = 0;
-            return increment(lengths, indices, j-1, overrideIndex);
+            return increment(lengths, indices, j - 1, overrideIndex);
         }
         return true;
     }

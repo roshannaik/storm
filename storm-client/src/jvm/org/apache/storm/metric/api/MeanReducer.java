@@ -18,24 +18,21 @@
 
 package org.apache.storm.metric.api;
 
-class MeanReducerState {
-    public int count = 0;
-    public double sum = 0.0;
-}
-
 public class MeanReducer implements IReducer<MeanReducerState> {
+    @Override
     public MeanReducerState init() {
         return new MeanReducerState();
     }
 
+    @Override
     public MeanReducerState reduce(MeanReducerState acc, Object input) {
         acc.count++;
-        if(input instanceof Double) {
-            acc.sum += (Double)input;
-        } else if(input instanceof Long) {
-            acc.sum += ((Long)input).doubleValue();
-        } else if(input instanceof Integer) {
-            acc.sum += ((Integer)input).doubleValue();
+        if (input instanceof Double) {
+            acc.sum += (Double) input;
+        } else if (input instanceof Long) {
+            acc.sum += ((Long) input).doubleValue();
+        } else if (input instanceof Integer) {
+            acc.sum += ((Integer) input).doubleValue();
         } else {
             throw new RuntimeException(
                 "MeanReducer::reduce called with unsupported input type `" + input.getClass()
@@ -44,8 +41,9 @@ public class MeanReducer implements IReducer<MeanReducerState> {
         return acc;
     }
 
+    @Override
     public Object extractResult(MeanReducerState acc) {
-        if(acc.count > 0) {
+        if (acc.count > 0) {
             return acc.sum / (double) acc.count;
         } else {
             return null;

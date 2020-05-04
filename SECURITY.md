@@ -28,6 +28,7 @@ IPsec to encrypt all traffic being sent between the hosts in the cluster.
 |--------------|--------------|------------------------|--------|
 | 2181 | `storm.zookeeper.port` | Nimbus, Supervisors, and Worker processes | ZooKeeper |
 | 6627 | `nimbus.thrift.port` | Storm clients, Supervisors, and UI | Nimbus |
+| 6628 | `supervisor.thrift.port` | Nimbus | Supervisors |
 | 8080 | `ui.port` | Client Web Browsers | UI |
 | 8000 | `logviewer.port` | Client Web Browsers | Logviewer |
 | 3772 | `drpc.port` | External DRPC Clients | DRPC |
@@ -50,6 +51,8 @@ Some form of Authentication is typically required; e.g., by using java servlet f
 ```yaml
 ui.filter: "filter.class"
 ui.filter.params: "param1":"value1"
+logviewer.filter: "filter.class"
+logviewer.filter.params: "param1":"value1"
 ```
 or by restricting the UI/log-viewers ports to only accept connections from localhost,
 and then front them with another web server, like Apache httpd, that can
@@ -62,7 +65,7 @@ The servlet filters are preferred because they allow individual topologies to
 specify who is (and who is not) allowed to access the pages associated with
 each topology.
 
-The Storm UI can be configured to use `AuthenticationFilter` from hadoop-auth.
+The Storm UI (or logviewer) can be configured to use `AuthenticationFilter` from hadoop-auth.
 ```yaml
 ui.filter: "org.apache.hadoop.security.authentication.server.AuthenticationFilter"
 ui.filter.params:

@@ -1,47 +1,22 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
+
 package org.apache.storm.grouping;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
-import com.google.common.util.concurrent.MoreExecutors;
 import java.util.Arrays;
-
-import org.apache.commons.collections.map.HashedMap;
-import org.apache.storm.Config;
-import org.apache.storm.daemon.GrouperFactory;
-import org.apache.storm.generated.GlobalStreamId;
-import org.apache.storm.generated.Grouping;
-import org.apache.storm.generated.NodeInfo;
-import org.apache.storm.generated.NullStruct;
-import org.apache.storm.task.WorkerTopologyContext;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -51,6 +26,20 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.storm.Config;
+import org.apache.storm.daemon.GrouperFactory;
+import org.apache.storm.generated.GlobalStreamId;
+import org.apache.storm.generated.Grouping;
+import org.apache.storm.generated.NodeInfo;
+import org.apache.storm.generated.NullStruct;
+import org.apache.storm.shade.com.google.common.collect.Lists;
+import org.apache.storm.shade.com.google.common.collect.Sets;
+import org.apache.storm.shade.com.google.common.util.concurrent.MoreExecutors;
+import org.apache.storm.task.WorkerTopologyContext;
+import org.junit.Ignore;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -62,14 +51,17 @@ public class LoadAwareShuffleGroupingTest {
     public static final double ACCEPTABLE_MARGIN = 0.015;
     private static final Logger LOG = LoggerFactory.getLogger(LoadAwareShuffleGroupingTest.class);
 
-    private WorkerTopologyContext mockContext(List<Integer> availableTaskIds) {
+    private Map<String, Object> createConf() {
         Map<String, Object> conf = new HashMap<>();
         conf.put(Config.STORM_NETWORK_TOPOGRAPHY_PLUGIN, "org.apache.storm.networktopography.DefaultRackDNSToSwitchMapping");
         conf.put(Config.TOPOLOGY_LOCALITYAWARE_HIGHER_BOUND, 0.8);
         conf.put(Config.TOPOLOGY_LOCALITYAWARE_LOWER_BOUND, 0.2);
+        return conf;
+    }
 
+    private WorkerTopologyContext mockContext(List<Integer> availableTaskIds) {
         WorkerTopologyContext context = mock(WorkerTopologyContext.class);
-        when(context.getConf()).thenReturn(conf);
+        when(context.getConf()).thenReturn(createConf());
         Map<Integer, NodeInfo> taskNodeToPort = new HashMap<>();
         NodeInfo nodeInfo = new NodeInfo("node-id", Sets.newHashSet(6700L));
         availableTaskIds.forEach(e -> taskNodeToPort.put(e, nodeInfo));
@@ -101,11 +93,11 @@ public class LoadAwareShuffleGroupingTest {
             double expectedOnePercentage = expectedOneWeight / (expectedOneWeight + expectedTwoWeight);
             double expectedTwoPercentage = expectedTwoWeight / (expectedOneWeight + expectedTwoWeight);
             assertEquals("i = " + i,
-                expectedOnePercentage, countByType.getOrDefault(1, 0.0) / grouping.getCapacity(),
-                0.01);
+                         expectedOnePercentage, countByType.getOrDefault(1, 0.0) / grouping.getCapacity(),
+                         0.01);
             assertEquals("i = " + i,
-                expectedTwoPercentage, countByType.getOrDefault(2, 0.0) / grouping.getCapacity(),
-                0.01);
+                         expectedTwoPercentage, countByType.getOrDefault(2, 0.0) / grouping.getCapacity(),
+                         0.01);
         }
 
         //Now verify that when it is switched we can recover
@@ -122,13 +114,13 @@ public class LoadAwareShuffleGroupingTest {
             double expectedOnePercentage = expectedOneWeight / (expectedOneWeight + expectedTwoWeight);
             double expectedTwoPercentage = expectedTwoWeight / (expectedOneWeight + expectedTwoWeight);
             assertEquals(expectedOnePercentage, countByType.getOrDefault(1, 0.0) / grouping.getCapacity(),
-                0.01);
+                         0.01);
             assertEquals(expectedTwoPercentage, countByType.getOrDefault(2, 0.0) / grouping.getCapacity(),
-                0.01);
+                         0.01);
         }
     }
 
-    private Map<Integer,Double> count(int[] choices, List<Integer>[] rets) {
+    private Map<Integer, Double> count(int[] choices, List<Integer>[] rets) {
         Map<Integer, Double> ret = new HashMap<>();
         for (int i : choices) {
             int task = rets[i].get(0);
@@ -168,7 +160,7 @@ public class LoadAwareShuffleGroupingTest {
 
         for (int i = 0; i < numTasks; i++) {
             assertTrue("Distribution should be even for all nodes with small delta",
-                taskCounts[i] >= minPrCount && taskCounts[i] <= maxPrCount);
+                       taskCounts[i] >= minPrCount && taskCounts[i] <= maxPrCount);
         }
     }
 
@@ -239,7 +231,7 @@ public class LoadAwareShuffleGroupingTest {
 
         // Wait for all tasks to complete
         int[] taskIdTotals = new int[numTasks];
-        for (Future taskResult: taskResults) {
+        for (Future taskResult : taskResults) {
             while (!taskResult.isDone()) {
                 Thread.sleep(1000);
             }
@@ -254,7 +246,7 @@ public class LoadAwareShuffleGroupingTest {
 
         for (int i = 0; i < numTasks; i++) {
             assertTrue("Distribution should be even for all nodes with small delta",
-                taskIdTotals[i] >= minPrCount && taskIdTotals[i] <= maxPrCount);
+                       taskIdTotals[i] >= minPrCount && taskIdTotals[i] <= maxPrCount);
         }
     }
 
@@ -263,7 +255,7 @@ public class LoadAwareShuffleGroupingTest {
         // port test-shuffle-load-even
         LoadAwareCustomStreamGrouping shuffler = GrouperFactory
             .mkGrouper(mockContext(Lists.newArrayList(1, 2)), "comp", "stream", null, Grouping.shuffle(new NullStruct()),
-                Lists.newArrayList(1, 2), Collections.emptyMap());
+                       Lists.newArrayList(1, 2), Collections.emptyMap());
         int numMessages = 100000;
         int minPrCount = (int) (numMessages * (0.5 - ACCEPTABLE_MARGIN));
         int maxPrCount = (int) (numMessages * (0.5 + ACCEPTABLE_MARGIN));
@@ -278,7 +270,7 @@ public class LoadAwareShuffleGroupingTest {
 
         List<Object> data = Lists.newArrayList(1, 2);
         int[] frequencies = new int[3];
-        for (int i = 0 ; i < numMessages ; i++) {
+        for (int i = 0; i < numMessages; i++) {
             List<Integer> tasks = shuffler.chooseTasks(1, data);
             for (int task : tasks) {
                 frequencies[task]++;
@@ -302,7 +294,7 @@ public class LoadAwareShuffleGroupingTest {
         final int numTasks = 10;
         List<Integer> availableTaskIds = getAvailableTaskIds(numTasks);
         runSimpleBenchmark(new LoadAwareShuffleGrouping(), availableTaskIds,
-            buildLocalTasksEvenLoadMapping(availableTaskIds));
+                           buildLocalTasksEvenLoadMapping(availableTaskIds));
     }
 
     @Ignore
@@ -311,7 +303,7 @@ public class LoadAwareShuffleGroupingTest {
         final int numTasks = 10;
         List<Integer> availableTaskIds = getAvailableTaskIds(numTasks);
         runSimpleBenchmark(new LoadAwareShuffleGrouping(), availableTaskIds,
-            buildLocalTasksUnevenLoadMapping(availableTaskIds));
+                           buildLocalTasksUnevenLoadMapping(availableTaskIds));
     }
 
     @Ignore
@@ -322,7 +314,7 @@ public class LoadAwareShuffleGroupingTest {
         final int numThreads = 2;
         List<Integer> availableTaskIds = getAvailableTaskIds(numTasks);
         runMultithreadedBenchmark(new LoadAwareShuffleGrouping(), availableTaskIds,
-            buildLocalTasksEvenLoadMapping(availableTaskIds), numThreads);
+                                  buildLocalTasksEvenLoadMapping(availableTaskIds), numThreads);
     }
 
     @Ignore
@@ -333,7 +325,7 @@ public class LoadAwareShuffleGroupingTest {
         final int numThreads = 2;
         List<Integer> availableTaskIds = getAvailableTaskIds(numTasks);
         runMultithreadedBenchmark(new LoadAwareShuffleGrouping(), availableTaskIds,
-            buildLocalTasksUnevenLoadMapping(availableTaskIds), numThreads);
+                                  buildLocalTasksUnevenLoadMapping(availableTaskIds), numThreads);
     }
 
     private List<Integer> getAvailableTaskIds(int numTasks) {
@@ -377,7 +369,7 @@ public class LoadAwareShuffleGroupingTest {
 
 
     private int[] runChooseTasksWithVerification(LoadAwareShuffleGrouping grouper, int totalEmits,
-        int numTasks, LoadMapping loadMapping) {
+                                                 int numTasks, LoadMapping loadMapping) {
         int[] taskCounts = new int[numTasks];
 
         // Task Id not used, so just pick a static value
@@ -403,7 +395,7 @@ public class LoadAwareShuffleGroupingTest {
     }
 
     private void runSimpleBenchmark(LoadAwareCustomStreamGrouping grouper,
-        List<Integer> availableTaskIds, LoadMapping loadMapping) {
+                                    List<Integer> availableTaskIds, LoadMapping loadMapping) {
         // Task Id not used, so just pick a static value
         final int inputTaskId = 100;
 
@@ -440,7 +432,7 @@ public class LoadAwareShuffleGroupingTest {
     }
 
     private void runMultithreadedBenchmark(LoadAwareCustomStreamGrouping grouper,
-        List<Integer> availableTaskIds, LoadMapping loadMapping, int numThreads)
+                                           List<Integer> availableTaskIds, LoadMapping loadMapping, int numThreads)
         throws InterruptedException, ExecutionException {
         // Task Id not used, so just pick a static value
         final int inputTaskId = 100;
@@ -493,7 +485,7 @@ public class LoadAwareShuffleGroupingTest {
 
         // Wait for all tasks to complete
         Long maxDurationMillis = 0L;
-        for (Future taskResult: taskResults) {
+        for (Future taskResult : taskResults) {
             while (!taskResult.isDone()) {
                 Thread.sleep(100);
             }
@@ -506,5 +498,76 @@ public class LoadAwareShuffleGroupingTest {
         LOG.info("Max duration among threads is : {} ms", maxDurationMillis);
 
         refreshService.shutdownNow();
+    }
+
+    @Test
+    public void testLoadSwitching() throws Exception {
+        LoadAwareShuffleGrouping grouping = new LoadAwareShuffleGrouping();
+        WorkerTopologyContext context = createLoadSwitchingContext();
+        grouping.prepare(context, new GlobalStreamId("a", "default"), Arrays.asList(1, 2, 3));
+        // startup should default to worker local
+        assertEquals(LoadAwareShuffleGrouping.LocalityScope.WORKER_LOCAL, grouping.getCurrentScope());
+
+        // with high load, switch to host local
+        LoadMapping lm = createLoadMapping(1.0, 1.0, 1.0);
+        grouping.refreshLoad(lm);
+        assertEquals(LoadAwareShuffleGrouping.LocalityScope.HOST_LOCAL, grouping.getCurrentScope());
+
+        // load remains high, switch to rack local
+        grouping.refreshLoad(lm);
+        assertEquals(LoadAwareShuffleGrouping.LocalityScope.RACK_LOCAL, grouping.getCurrentScope());
+
+        // load remains high. switch to everything
+        grouping.refreshLoad(lm);
+        assertEquals(LoadAwareShuffleGrouping.LocalityScope.EVERYTHING, grouping.getCurrentScope());
+
+        // lower load below low water threshold, but worker local load remains too high
+        // should switch to rack local
+        lm = createLoadMapping(0.2, 0.1, 0.1);
+        grouping.refreshLoad(lm);
+        assertEquals(LoadAwareShuffleGrouping.LocalityScope.RACK_LOCAL, grouping.getCurrentScope());
+
+        // lower load continues, switch to host local
+        grouping.refreshLoad(lm);
+        assertEquals(LoadAwareShuffleGrouping.LocalityScope.HOST_LOCAL, grouping.getCurrentScope());
+
+        // lower load continues, should NOT be able to switch to worker local yet
+        grouping.refreshLoad(lm);
+        assertEquals(LoadAwareShuffleGrouping.LocalityScope.HOST_LOCAL, grouping.getCurrentScope());
+
+        // reduce load on local worker task, should switch to worker local
+        lm = createLoadMapping(0.1, 0.1, 0.1);
+        grouping.refreshLoad(lm);
+        assertEquals(LoadAwareShuffleGrouping.LocalityScope.WORKER_LOCAL, grouping.getCurrentScope());
+    }
+
+    private LoadMapping createLoadMapping(double load1, double load2, double load3) {
+        Map<Integer, Double> localLoad = new HashMap<>();
+        localLoad.put(1, load1);
+        localLoad.put(2, load2);
+        localLoad.put(3, load3);
+        LoadMapping lm = new LoadMapping();
+        lm.setLocal(localLoad);
+        return lm;
+    }
+
+    // creates a WorkerTopologyContext with 3 tasks, one worker local, one host local,
+    // and one rack local
+    private WorkerTopologyContext createLoadSwitchingContext() {
+        WorkerTopologyContext context = mock(WorkerTopologyContext.class);
+        when(context.getConf()).thenReturn(createConf());
+        Map<Integer, NodeInfo> taskNodeToPort = new HashMap<>();
+
+        // worker local task
+        taskNodeToPort.put(1, new NodeInfo("node-id", Sets.newHashSet(6701L)));
+        // node local task
+        taskNodeToPort.put(2, new NodeInfo("node-id", Sets.newHashSet(6702L)));
+        // rack local task
+        taskNodeToPort.put(3, new NodeInfo("node-id2", Sets.newHashSet(6703L)));
+
+        when(context.getTaskToNodePort()).thenReturn(new AtomicReference<>(taskNodeToPort));
+        when(context.getThisWorkerHost()).thenReturn("node-id");
+        when(context.getThisWorkerPort()).thenReturn(6701);
+        return context;
     }
 }

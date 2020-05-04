@@ -1,19 +1,13 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
 
 package org.apache.storm.daemon;
@@ -28,8 +22,6 @@ import java.util.Map.Entry;
 import java.util.Queue;
 import java.util.Random;
 import java.util.function.BooleanSupplier;
-
-
 import org.apache.storm.Config;
 import org.apache.storm.Thrift;
 import org.apache.storm.daemon.worker.WorkerState;
@@ -46,6 +38,8 @@ import org.apache.storm.generated.StormTopology;
 import org.apache.storm.grouping.LoadAwareCustomStreamGrouping;
 import org.apache.storm.hooks.ITaskHook;
 import org.apache.storm.hooks.info.EmitInfo;
+import org.apache.storm.metrics2.StormMetricRegistry;
+import org.apache.storm.metrics2.TaskMetrics;
 import org.apache.storm.spout.ShellSpout;
 import org.apache.storm.stats.CommonStats;
 import org.apache.storm.task.ShellBolt;
@@ -63,21 +57,21 @@ import org.slf4j.LoggerFactory;
 public class Task {
 
     private static final Logger LOG = LoggerFactory.getLogger(Task.class);
-
-    private Executor executor;
-    private WorkerState workerData;
-    private TopologyContext systemTopologyContext;
-    private TopologyContext userTopologyContext;
-    private WorkerTopologyContext workerTopologyContext;
-    private Integer taskId;
-    private String componentId;
-    private Object taskObject; // Spout/Bolt object
-    private Map<String, Object> topoConf;
-    private BooleanSupplier emitSampler;
-    private CommonStats executorStats;
-    private Map<String, Map<String, LoadAwareCustomStreamGrouping>> streamComponentToGrouper;
-    private HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> streamToGroupers;
-    private boolean debug;
+    private final TaskMetrics taskMetrics;
+    private final Executor executor;
+    private final WorkerState workerData;
+    private final TopologyContext systemTopologyContext;
+    private final TopologyContext userTopologyContext;
+    private final WorkerTopologyContext workerTopologyContext;
+    private final Integer taskId;
+    private final String componentId;
+    private final Object taskObject; // Spout/Bolt object
+    private final Map<String, Object> topoConf;
+    private final BooleanSupplier emitSampler;
+    private final CommonStats executorStats;
+    private final Map<String, Map<String, LoadAwareCustomStreamGrouping>> streamComponentToGrouper;
+    private final HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> streamToGroupers;
+    private final boolean debug;
 
     public Task(Executor executor, Integer taskId) throws IOException {
         this.taskId = taskId;
@@ -95,6 +89,25 @@ public class Task {
         this.taskObject = mkTaskObject();
         this.debug = topoConf.containsKey(Config.TOPOLOGY_DEBUG) && (Boolean) topoConf.get(Config.TOPOLOGY_DEBUG);
         this.addTaskHooks();
+        this.taskMetrics = new TaskMetrics(this.workerTopologyContext, this.componentId, this.taskId, workerData.getMetricRegistry());
+    }
+
+    private static HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> getGroupersPerStream(
+        Map<String, Map<String, LoadAwareCustomStreamGrouping>> streamComponentToGrouper) {
+        HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> result = new HashMap<>(streamComponentToGrouper.size());
+
+        for (Entry<String, Map<String, LoadAwareCustomStreamGrouping>> entry : streamComponentToGrouper.entrySet()) {
+            String stream = entry.getKey();
+            Map<String, LoadAwareCustomStreamGrouping> groupers = entry.getValue();
+            ArrayList<LoadAwareCustomStreamGrouping> perStreamGroupers = new ArrayList<>();
+            if (groupers != null) { // null for __system bolt
+                for (LoadAwareCustomStreamGrouping grouper : groupers.values()) {
+                    perStreamGroupers.add(grouper);
+                }
+            }
+            result.put(stream, perStreamGroupers);
+        }
+        return result;
     }
 
     public List<Integer> getOutgoingTasks(Integer outTaskId, String stream, List<Object> values) {
@@ -116,9 +129,9 @@ public class Task {
 
         try {
             if (emitSampler.getAsBoolean()) {
-                executorStats.emittedTuple(stream);
+                executorStats.emittedTuple(stream, this.taskMetrics.getEmitted(stream));
                 if (null != outTaskId) {
-                    executorStats.transferredTuples(stream, 1);
+                    executorStats.transferredTuples(stream, 1, this.taskMetrics.getTransferred(stream));
                 }
             }
         } catch (Exception e) {
@@ -130,7 +143,6 @@ public class Task {
         return new ArrayList<>(0);
     }
 
-
     public List<Integer> getOutgoingTasks(String stream, List<Object> values) {
         if (debug) {
             LOG.info("Emitting Tuple: taskId={} componentId={} stream={} values={}", taskId, componentId, stream, values);
@@ -139,8 +151,8 @@ public class Task {
         ArrayList<Integer> outTasks = new ArrayList<>();
 
         ArrayList<LoadAwareCustomStreamGrouping> groupers = streamToGroupers.get(stream);
-        if (null != groupers)  {
-            for (int i=0; i<groupers.size(); ++i) {
+        if (null != groupers) {
+            for (int i = 0; i < groupers.size(); ++i) {
                 LoadAwareCustomStreamGrouping grouper = groupers.get(i);
                 if (grouper == GrouperFactory.DIRECT) {
                     throw new IllegalArgumentException("Cannot do regular emit to direct stream");
@@ -157,8 +169,8 @@ public class Task {
         }
         try {
             if (emitSampler.getAsBoolean()) {
-                executorStats.emittedTuple(stream);
-                executorStats.transferredTuples(stream, outTasks.size());
+                executorStats.emittedTuple(stream, this.taskMetrics.getEmitted(stream));
+                executorStats.transferredTuples(stream, outTasks.size(), this.taskMetrics.getTransferred(stream));
             }
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -186,13 +198,16 @@ public class Task {
         return taskObject;
     }
 
+    public TaskMetrics getTaskMetrics() {
+        return taskMetrics;
+    }
 
     // Non Blocking call. If cannot emit to destination immediately, such tuples will be added to `pendingEmits` argument
     public void sendUnanchored(String stream, List<Object> values, ExecutorTransfer transfer, Queue<AddressedTuple> pendingEmits) {
         Tuple tuple = getTuple(stream, values);
         List<Integer> tasks = getOutgoingTasks(stream, values);
-        for (Integer t : tasks) {
-            AddressedTuple addressedTuple = new AddressedTuple(t, tuple);
+        for (int i = 0; i < tasks.size(); i++) {
+            AddressedTuple addressedTuple = new AddressedTuple(tasks.get(i), tuple);
             transfer.tryTransfer(addressedTuple, pendingEmits);
         }
     }
@@ -210,8 +225,8 @@ public class Task {
         double spct = ((debugOptions != null) && (debugOptions.is_enable())) ? debugOptions.get_samplingpct() : 0;
         if (spct > 0 && (random.nextDouble() * 100) < spct) {
             sendUnanchored(StormCommon.EVENTLOGGER_STREAM_ID,
-                    new Values(componentId, messageId, System.currentTimeMillis(), values),
-                    executor.getExecutorTransfer(), overflow);
+                           new Values(componentId, messageId, System.currentTimeMillis(), values),
+                           executor.getExecutorTransfer(), overflow);
         }
     }
 
@@ -227,15 +242,16 @@ public class Task {
             workerData.getBlobToLastKnownVersion(),
             workerData.getTopologyId(),
             ConfigUtils.supervisorStormResourcesPath(
-                    ConfigUtils.supervisorStormDistRoot(conf, workerData.getTopologyId())),
-                    ConfigUtils.workerPidsRoot(conf, workerData.getWorkerId()),
+                ConfigUtils.supervisorStormDistRoot(conf, workerData.getTopologyId())),
+            ConfigUtils.workerPidsRoot(conf, workerData.getWorkerId()),
             taskId,
             workerData.getPort(), workerData.getLocalTaskIds(),
             workerData.getDefaultSharedResources(),
             workerData.getUserSharedResources(),
             executor.getSharedExecutorData(),
             executor.getIntervalToTaskToMetricToRegistry(),
-            executor.getOpenOrPrepareWasCalled());
+            executor.getOpenOrPrepareWasCalled(),
+            workerData.getMetricRegistry());
     }
 
     private Object mkTaskObject() {
@@ -283,24 +299,6 @@ public class Task {
             }
         }
     }
-
-    private static HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> getGroupersPerStream(Map<String, Map<String, LoadAwareCustomStreamGrouping>> streamComponentToGrouper) {
-        HashMap<String, ArrayList<LoadAwareCustomStreamGrouping>> result = new HashMap<>(streamComponentToGrouper.size());
-
-        for (Entry<String, Map<String, LoadAwareCustomStreamGrouping>> entry : streamComponentToGrouper.entrySet()) {
-            String stream = entry.getKey();
-            Map<String, LoadAwareCustomStreamGrouping> groupers = entry.getValue();
-            ArrayList<LoadAwareCustomStreamGrouping> perStreamGroupers = new ArrayList<>();
-            if (groupers != null) { // null for __system bolt
-                for (LoadAwareCustomStreamGrouping grouper : groupers.values()) {
-                    perStreamGroupers.add(grouper);
-                }
-            }
-            result.put(stream, perStreamGroupers);
-        }
-        return result;
-    }
-
 
     @Override
     public String toString() {

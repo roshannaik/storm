@@ -18,11 +18,9 @@
 
 package org.apache.storm.perf;
 
-
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-
 import org.apache.storm.Config;
 import org.apache.storm.generated.StormTopology;
 import org.apache.storm.perf.utils.Helper;
@@ -64,7 +62,7 @@ public class LowThroughputTopo {
         BoltDeclarer bd = builder.setBolt(BOLT_ID, bolt, Helper.getInt(conf, BOLT_COUNT, 1));
 
         bd.localOrShuffleGrouping(SPOUT_ID);
-//        bd.shuffleGrouping(SPOUT_ID);
+        //        bd.shuffleGrouping(SPOUT_ID);
         return builder.createTopology();
     }
 
@@ -95,7 +93,7 @@ public class LowThroughputTopo {
         private SpoutOutputCollector collector = null;
         private long sleepTimeMs;
 
-        public ThrottledSpout(long sleepMs) {
+        ThrottledSpout(long sleepMs) {
             this.sleepTimeMs = sleepMs;
         }
 
@@ -110,7 +108,8 @@ public class LowThroughputTopo {
         }
 
         @Override
-        public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
+        public void open(Map<String, Object> conf, TopologyContext context,
+                         SpoutOutputCollector collector) {
             this.collector = collector;
         }
 
@@ -133,7 +132,9 @@ public class LowThroughputTopo {
         private OutputCollector collector;
 
         @Override
-        public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
+        public void prepare(Map<String, Object> topoConf,
+                            TopologyContext context,
+                            OutputCollector collector) {
             this.collector = collector;
         }
 

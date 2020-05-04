@@ -18,6 +18,9 @@
 
 package org.apache.storm.starter.trident;
 
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.apache.storm.task.IMetricsContext;
 import org.apache.storm.topology.FailedException;
 import org.apache.storm.trident.state.CombinerValueUpdater;
@@ -28,10 +31,6 @@ import org.apache.storm.trident.testing.MemoryMapState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
 public class DebugMemoryMapState<T> extends MemoryMapState<T> {
     private static final Logger LOG = LoggerFactory.getLogger(DebugMemoryMapState.class);
 
@@ -41,6 +40,7 @@ public class DebugMemoryMapState<T> extends MemoryMapState<T> {
         super(id);
     }
 
+    @Override
     public List<T> multiUpdate(List<List<Object>> keys, List<ValueUpdater> updaters) {
         print(keys, updaters);
         if ((updateCount++ % 5) == 0) {
@@ -59,15 +59,15 @@ public class DebugMemoryMapState<T> extends MemoryMapState<T> {
     }
 
     public static class Factory implements StateFactory {
-        String _id;
+        String id;
 
         public Factory() {
-            _id = UUID.randomUUID().toString();
+            id = UUID.randomUUID().toString();
         }
 
         @Override
         public State makeState(Map<String, Object> conf, IMetricsContext metrics, int partitionIndex, int numPartitions) {
-            return new DebugMemoryMapState(_id + partitionIndex);
+            return new DebugMemoryMapState(id + partitionIndex);
         }
     }
 }
