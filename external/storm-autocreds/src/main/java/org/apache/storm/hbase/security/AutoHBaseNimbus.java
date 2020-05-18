@@ -18,6 +18,15 @@
 
 package org.apache.storm.hbase.security;
 
+import static org.apache.storm.hbase.security.HBaseSecurityUtil.HBASE_CREDENTIALS;
+import static org.apache.storm.hbase.security.HBaseSecurityUtil.HBASE_KEYTAB_FILE_KEY;
+import static org.apache.storm.hbase.security.HBaseSecurityUtil.HBASE_PRINCIPAL_KEY;
+
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectOutputStream;
+import java.net.InetAddress;
+import java.util.Map;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.client.Connection;
@@ -34,15 +43,6 @@ import org.apache.storm.common.AbstractHadoopNimbusPluginAutoCreds;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayOutputStream;
-import java.io.ObjectOutputStream;
-import java.net.InetAddress;
-import java.util.Map;
-
-import static org.apache.storm.hbase.security.HBaseSecurityUtil.HBASE_CREDENTIALS;
-import static org.apache.storm.hbase.security.HBaseSecurityUtil.HBASE_KEYTAB_FILE_KEY;
-import static org.apache.storm.hbase.security.HBaseSecurityUtil.HBASE_PRINCIPAL_KEY;
-
 /**
  * Auto credentials nimbus plugin for HBase implementation. This class automatically
  * gets HBase delegation tokens and push it to user's topology.
@@ -51,7 +51,7 @@ public class AutoHBaseNimbus extends AbstractHadoopNimbusPluginAutoCreds {
     private static final Logger LOG = LoggerFactory.getLogger(AutoHBaseNimbus.class);
 
     @Override
-    public void doPrepare(Map conf) {
+    public void doPrepare(Map<String, Object> conf) {
         // we don't allow any cluster wide configuration
     }
 
@@ -66,26 +66,20 @@ public class AutoHBaseNimbus extends AbstractHadoopNimbusPluginAutoCreds {
     }
 
     @Override
-    protected  byte[] getHadoopCredentials(Map conf, String configKey, final String topologyOwnerPrincipal) {
+    protected  byte[] getHadoopCredentials(Map<String, Object> conf, String configKey, final String topologyOwnerPrincipal) {
         Configuration configuration = getHadoopConfiguration(conf, configKey);
         return getHadoopCredentials(conf, configuration, topologyOwnerPrincipal);
     }
 
     @Override
-    protected byte[] getHadoopCredentials(Map conf, final String topologyOwnerPrincipal) {
+    protected byte[] getHadoopCredentials(Map<String, Object> conf, final String topologyOwnerPrincipal) {
         return getHadoopCredentials(conf, HBaseConfiguration.create(), topologyOwnerPrincipal);
     }
 
-    private Configuration getHadoopConfiguration(Map topoConf, String configKey) {
-        Configuration configuration = HBaseConfiguration.create();
-        fillHadoopConfiguration(topoConf, configKey, configuration);
-        return configuration;
-    }
-
     @SuppressWarnings("unchecked")
-    protected byte[] getHadoopCredentials(Map conf, Configuration hbaseConf, final String topologySubmitterUser) {
+    protected byte[] getHadoopCredentials(Map<String, Object> conf, Configuration hbaseConf, final String topologySubmitterUser) {
         try {
-            if(UserGroupInformation.isSecurityEnabled()) {
+            if (UserGroupInformation.isSecurityEnabled()) {
                 UserProvider provider = UserProvider.instantiate(hbaseConf);
                 provider.login(HBASE_KEYTAB_FILE_KEY, HBASE_PRINCIPAL_KEY, InetAddress.getLocalHost().getCanonicalHostName());
 
@@ -97,7 +91,7 @@ public class AutoHBaseNimbus extends AbstractHadoopNimbusPluginAutoCreds {
 
                 User user = User.create(proxyUser);
 
-                if(user.isHBaseSecurityEnabled(hbaseConf)) {
+                if (user.isHBaseSecurityEnabled(hbaseConf)) {
                     final Connection connection = ConnectionFactory.createConnection(hbaseConf, user);
                     TokenUtil.obtainAndCacheToken(connection, user);
 
@@ -127,8 +121,14 @@ public class AutoHBaseNimbus extends AbstractHadoopNimbusPluginAutoCreds {
         }
     }
 
+    private Configuration getHadoopConfiguration(Map<String, Object> topoConf, String configKey) {
+        Configuration configuration = HBaseConfiguration.create();
+        fillHadoopConfiguration(topoConf, configKey, configuration);
+        return configuration;
+    }
+
     @Override
-    public void doRenew(Map<String, String> credentials, Map topologyConf, final String topologySubmitterUser) {
+    public void doRenew(Map<String, String> credentials, Map<String, Object> topologyConf, final String topologySubmitterUser) {
         //HBASE tokens are not renewable so we always have to get new ones.
         populateCredentials(credentials, topologyConf, topologySubmitterUser);
     }

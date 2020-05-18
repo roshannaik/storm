@@ -1,19 +1,13 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
  * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
 
 package org.apache.storm.container;
@@ -29,7 +23,7 @@ import java.util.Set;
 public interface ResourceIsolationInterface {
 
     /**
-     * Called when starting up
+     * Called when starting up.
      *
      * @param conf the cluster config
      * @throws IOException on any error.
@@ -42,8 +36,9 @@ public interface ResourceIsolationInterface {
      * @param workerId worker id of the worker to start
      * @param workerMemory the amount of memory for the worker or null if not enforced
      * @param workerCpu the amount of cpu for the worker or null if not enforced
+     * @param numaId NUMA zone if applicable the worker should be bound to
      */
-    void reserveResourcesForWorker(String workerId, Integer workerMemory, Integer workerCpu);
+    void reserveResourcesForWorker(String workerId, Integer workerMemory, Integer workerCpu, String numaId);
 
     /**
      * This function will be called when the worker needs to shutdown. This function should include logic to clean up
@@ -91,6 +86,7 @@ public interface ResourceIsolationInterface {
     long getMemoryUsage(String workerId) throws IOException;
 
     /**
+     * Get the system free memory in MB.
      * @return The amount of memory in bytes that are free on the system. This might not be the entire box, it might be
      *     within a parent resource group.
      * @throws IOException on any error.

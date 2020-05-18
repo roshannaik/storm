@@ -18,27 +18,13 @@
 
 package org.apache.storm.policy;
 
+import java.util.Map;
+import java.util.concurrent.locks.LockSupport;
 import org.apache.storm.Config;
 import org.apache.storm.utils.ObjectReader;
 
-import java.util.Map;
-import java.util.concurrent.locks.LockSupport;
-
 public class WaitStrategyPark implements IWaitStrategy {
     private long parkTimeNanoSec;
-
-    @Override
-    public void prepare(Map<String, Object> conf, WAIT_SITUATION waitSituation) {
-        if (waitSituation == WAIT_SITUATION.SPOUT_WAIT) {
-            parkTimeNanoSec = 1_000 * ObjectReader.getLong(conf.get(Config.TOPOLOGY_SPOUT_WAIT_PARK_MICROSEC));
-        } else if (waitSituation == WAIT_SITUATION.BOLT_WAIT) {
-            parkTimeNanoSec = 1_000 * ObjectReader.getLong(conf.get(Config.TOPOLOGY_BOLT_WAIT_PARK_MICROSEC));
-        } else if (waitSituation == WAIT_SITUATION.BACK_PRESSURE_WAIT) {
-            parkTimeNanoSec = 1_000 * ObjectReader.getLong(conf.get(Config.TOPOLOGY_BACKPRESSURE_WAIT_PARK_MICROSEC));
-        } else {
-            throw new IllegalArgumentException("Unknown wait situation : " + waitSituation);
-        }
-    }
 
     public WaitStrategyPark() { // required for instantiation via reflection. must call prepare() thereafter
     }
@@ -48,6 +34,18 @@ public class WaitStrategyPark implements IWaitStrategy {
         parkTimeNanoSec = microsec * 1_000;
     }
 
+    @Override
+    public void prepare(Map<String, Object> conf, WaitSituation waitSituation) {
+        if (waitSituation == WaitSituation.SPOUT_WAIT) {
+            parkTimeNanoSec = 1_000 * ObjectReader.getLong(conf.get(Config.TOPOLOGY_SPOUT_WAIT_PARK_MICROSEC));
+        } else if (waitSituation == WaitSituation.BOLT_WAIT) {
+            parkTimeNanoSec = 1_000 * ObjectReader.getLong(conf.get(Config.TOPOLOGY_BOLT_WAIT_PARK_MICROSEC));
+        } else if (waitSituation == WaitSituation.BACK_PRESSURE_WAIT) {
+            parkTimeNanoSec = 1_000 * ObjectReader.getLong(conf.get(Config.TOPOLOGY_BACKPRESSURE_WAIT_PARK_MICROSEC));
+        } else {
+            throw new IllegalArgumentException("Unknown wait situation : " + waitSituation);
+        }
+    }
 
     @Override
     public int idle(int idleCounter) throws InterruptedException {

@@ -25,13 +25,19 @@ import org.apache.storm.DaemonConfig;
 import org.apache.storm.scheduler.Cluster;
 import org.apache.storm.scheduler.DefaultScheduler;
 import org.apache.storm.scheduler.INimbus;
+import org.apache.storm.scheduler.IScheduler;
 import org.apache.storm.scheduler.SchedulerAssignmentImpl;
 import org.apache.storm.scheduler.SupervisorDetails;
 import org.apache.storm.scheduler.Topologies;
 import org.apache.storm.scheduler.TopologyDetails;
+import org.apache.storm.scheduler.resource.ResourceAwareScheduler;
+import org.apache.storm.scheduler.resource.strategies.scheduling.DefaultResourceAwareStrategy;
 import org.apache.storm.utils.Utils;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,12 +48,23 @@ import java.util.Map;
 import java.util.Set;
 import java.util.List;
 import java.util.ArrayList;
+import org.apache.storm.metric.StormMetricsRegistry;
+import org.apache.storm.scheduler.resource.normalization.ResourceMetrics;
 
 public class TestBlacklistScheduler {
 
     private static final Logger LOG = LoggerFactory.getLogger(TestBlacklistScheduler.class);
 
     private static int currentTime = 1468216504;
+    private static IScheduler scheduler = null;
+
+    @After
+    public void cleanup() {
+        if (scheduler != null) {
+            scheduler.cleanup();
+            scheduler = null;
+        }
+    }
 
     @Test
     public void TestBadSupervisor() {
@@ -67,21 +84,24 @@ public class TestBlacklistScheduler {
         topoMap.put(topo1.getId(), topo1);
 
         Topologies topologies = new Topologies(topoMap);
-        Cluster cluster = new Cluster(iNimbus, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
-        BlacklistScheduler bs = new BlacklistScheduler(new DefaultScheduler());
-        bs.prepare(config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, supMap, TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
+        StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+        ResourceMetrics resourceMetrics = new ResourceMetrics(metricsRegistry);
+        Cluster cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<>(), topologies, config);
+        scheduler = new BlacklistScheduler(new DefaultScheduler());
+        scheduler.prepare(config, metricsRegistry);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, supMap, TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
         Assert.assertEquals("blacklist", Collections.singleton("host-0"), cluster.getBlacklistedHosts());
     }
 
-    @Test
-    public void TestBadSlot() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void TestBadSlot(boolean blacklistOnBadSlot) {
         INimbus iNimbus = new TestUtilsForBlacklistScheduler.INimbusTest();
 
         Map<String, SupervisorDetails> supMap = TestUtilsForBlacklistScheduler.genSupervisors(3, 4);
@@ -91,6 +111,7 @@ public class TestBlacklistScheduler {
         config.put(DaemonConfig.BLACKLIST_SCHEDULER_TOLERANCE_TIME, 200);
         config.put(DaemonConfig.BLACKLIST_SCHEDULER_TOLERANCE_COUNT, 2);
         config.put(DaemonConfig.BLACKLIST_SCHEDULER_RESUME_TIME, 300);
+        config.put(DaemonConfig.BLACKLIST_SCHEDULER_ASSUME_SUPERVISOR_BAD_BASED_ON_BAD_SLOT, blacklistOnBadSlot);
 
         Map<String, TopologyDetails> topoMap = new HashMap<String, TopologyDetails>();
 
@@ -98,18 +119,27 @@ public class TestBlacklistScheduler {
         topoMap.put(topo1.getId(), topo1);
 
         Topologies topologies = new Topologies(topoMap);
-        Cluster cluster = new Cluster(iNimbus, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
-        BlacklistScheduler bs = new BlacklistScheduler(new DefaultScheduler());
-        bs.prepare(config);
-        bs.schedule(topologies, cluster);
+        StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+        ResourceMetrics resourceMetrics = new ResourceMetrics(metricsRegistry);
+        Cluster cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
+        scheduler = new BlacklistScheduler(new DefaultScheduler());
+        scheduler.prepare(config, metricsRegistry);
+        scheduler.schedule(topologies, cluster);
 
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removePortFromSupervisors(supMap, "sup-0", 0), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removePortFromSupervisors(supMap, "sup-0", 0), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
-        bs.schedule(topologies, cluster);
-        Assert.assertEquals("blacklist", Collections.singleton("host-0"), cluster.getBlacklistedHosts());
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removePortFromSupervisors(supMap,
+                "sup-0", 0), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removePortFromSupervisors(supMap, "sup-0", 0),
+                TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
+        scheduler.schedule(topologies, cluster);
+
+        if (blacklistOnBadSlot) {
+            Assert.assertEquals("blacklist", Collections.singleton("host-0"), cluster.getBlacklistedHosts());
+        } else {
+            Assert.assertEquals("blacklist", Collections.emptySet(), cluster.getBlacklistedHosts());
+        }
     }
 
     @Test
@@ -130,22 +160,24 @@ public class TestBlacklistScheduler {
         topoMap.put(topo1.getId(), topo1);
 
         Topologies topologies = new Topologies(topoMap);
-        Cluster cluster = new Cluster(iNimbus, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
-        BlacklistScheduler bs = new BlacklistScheduler(new DefaultScheduler());
-        bs.prepare(config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
-        bs.schedule(topologies, cluster);
+        StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+        ResourceMetrics resourceMetrics = new ResourceMetrics(metricsRegistry);
+        Cluster cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
+        scheduler = new BlacklistScheduler(new DefaultScheduler());
+        scheduler.prepare(config, metricsRegistry);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
+        scheduler.schedule(topologies, cluster);
         Assert.assertEquals("blacklist", Collections.singleton("host-0"), cluster.getBlacklistedHosts());
         for (int i = 0; i < 300 / 10 - 2; i++) {
-            bs.schedule(topologies, cluster);
+            scheduler.schedule(topologies, cluster);
         }
         Assert.assertEquals("blacklist", Collections.singleton("host-0"), cluster.getBlacklistedHosts());
-        bs.schedule(topologies, cluster);
+        scheduler.schedule(topologies, cluster);
         Assert.assertEquals("blacklist", Collections.emptySet(), cluster.getBlacklistedHosts());
     }
 
@@ -170,24 +202,75 @@ public class TestBlacklistScheduler {
         topoMap.put(topo1.getId(), topo1);
 
         Topologies topologies = new Topologies(topoMap);
-        Cluster cluster = new Cluster(iNimbus, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
-        BlacklistScheduler bs = new BlacklistScheduler(new DefaultScheduler());
-        bs.prepare(config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
-        cluster = new Cluster(iNimbus, supMap, TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
+        StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+        ResourceMetrics resourceMetrics = new ResourceMetrics(metricsRegistry);
+        Cluster cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
+        scheduler = new BlacklistScheduler(new DefaultScheduler());
+        scheduler.prepare(config, metricsRegistry);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, supMap, TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
         Assert.assertEquals("blacklist", Collections.singleton("host-0"), cluster.getBlacklistedHosts());
         topoMap.put(topo2.getId(), topo2);
         topoMap.put(topo3.getId(), topo3);
         topoMap.put(topo4.getId(), topo4);
         topologies = new Topologies(topoMap);
-        cluster = new Cluster(iNimbus, supMap, TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
-        bs.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, supMap, TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
         Assert.assertEquals("blacklist", Collections.emptySet(), cluster.getBlacklistedHosts());
+    }
+
+    @Test
+    public void TestGreylist() {
+        INimbus iNimbus = new TestUtilsForBlacklistScheduler.INimbusTest();
+
+        Map<String, SupervisorDetails> supMap = TestUtilsForBlacklistScheduler.genSupervisors(2, 3);
+
+        Config config = new Config();
+        config.putAll(Utils.readDefaultConfig());
+        config.put(DaemonConfig.BLACKLIST_SCHEDULER_TOLERANCE_TIME, 200);
+        config.put(DaemonConfig.BLACKLIST_SCHEDULER_TOLERANCE_COUNT, 2);
+        config.put(DaemonConfig.BLACKLIST_SCHEDULER_RESUME_TIME, 300);
+        config.put(Config.TOPOLOGY_COMPONENT_CPU_PCORE_PERCENT, 0.0);
+        config.put(Config.TOPOLOGY_COMPONENT_RESOURCES_ONHEAP_MEMORY_MB, 0);
+        config.put(Config.TOPOLOGY_COMPONENT_RESOURCES_OFFHEAP_MEMORY_MB, 0);
+        config.put(Config.TOPOLOGY_SCHEDULER_STRATEGY, DefaultResourceAwareStrategy.class.getName());
+        config.put(Config.TOPOLOGY_RAS_ONE_EXECUTOR_PER_WORKER, true);
+
+        Map<String, TopologyDetails> topoMap = new HashMap<String, TopologyDetails>();
+
+        TopologyDetails topo1 = TestUtilsForBlacklistScheduler.getTopology("topo-1", config, 1, 1, 1, 1, currentTime - 2, true);
+        TopologyDetails topo2 = TestUtilsForBlacklistScheduler.getTopology("topo-2", config, 1, 1, 1, 1, currentTime - 8, true);
+        Topologies topologies = new Topologies(topoMap);
+
+        StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+        ResourceMetrics resourceMetrics = new ResourceMetrics(metricsRegistry);
+        Cluster cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
+        scheduler = new BlacklistScheduler(new ResourceAwareScheduler());
+
+        scheduler.prepare(config, metricsRegistry);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"), TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, supMap, TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        Assert.assertEquals("blacklist", Collections.singleton("host-0"), cluster.getBlacklistedHosts());
+
+        topoMap.put(topo1.getId(), topo1);
+        topoMap.put(topo2.getId(), topo2);
+        topologies = new Topologies(topoMap);
+        cluster = new Cluster(iNimbus, resourceMetrics, supMap, TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+        Assert.assertEquals("blacklist", Collections.emptySet(), cluster.getBlacklistedHosts());
+        Assert.assertEquals("greylist", Collections.singletonList("sup-0"), cluster.getGreyListedSupervisors());
+        LOG.debug("Now only these slots remain available: {}", cluster.getAvailableSlots());
+        Assert.assertTrue(cluster.getAvailableSlots(supMap.get("sup-0")).containsAll(cluster.getAvailableSlots()));
     }
 
     @Test
@@ -205,8 +288,8 @@ public class TestBlacklistScheduler {
         topoMap.put(topo1.getId(), topo1);
         topoMap.put(topo2.getId(), topo2);
         Topologies topologies = new Topologies(topoMap);
-        BlacklistScheduler bs = new BlacklistScheduler(new DefaultScheduler());
-        bs.prepare(config);
+        scheduler = new BlacklistScheduler(new DefaultScheduler());
+        scheduler.prepare(config, new StormMetricsRegistry());
 
         List<Map<Integer, List<Integer>>> faultList = new ArrayList<>();
 
@@ -232,7 +315,7 @@ public class TestBlacklistScheduler {
         int count = 0;
         for (Map<String, SupervisorDetails> supervisors : supervisorsList) {
             cluster = FaultGenerateUtils.nextCluster(cluster, supervisors, iNimbus, config, topologies);
-            bs.schedule(topologies, cluster);
+            scheduler.schedule(topologies, cluster);
             if (count == 0) {
                 Set<String> hosts = new HashSet<>();
                 Assert.assertEquals("blacklist", hosts, cluster.getBlacklistedHosts());
@@ -272,7 +355,6 @@ public class TestBlacklistScheduler {
             }
             count++;
         }
-
     }
 
     @Test
@@ -292,25 +374,70 @@ public class TestBlacklistScheduler {
         topoMap.put(topo1.getId(), topo1);
 
         Topologies topologies = new Topologies(topoMap);
-        Cluster cluster = new Cluster(iNimbus, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
+        StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+        ResourceMetrics resourceMetrics = new ResourceMetrics(metricsRegistry);
+        Cluster cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
         BlacklistScheduler bs = new BlacklistScheduler(new DefaultScheduler());
-        bs.prepare(config);
+        scheduler = bs;
+        bs.prepare(config, metricsRegistry);
         bs.schedule(topologies,cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap,"sup-0"),TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removeSupervisorFromSupervisors(supMap, "sup-0"),
+                TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
         for (int i = 0 ; i < 20 ; i++){
             bs.schedule(topologies,cluster);
         }
         Set<String> cached = new HashSet<>();
         cached.add("sup-1");
         cached.add("sup-2");
-        Assert.assertEquals(cached,bs.cachedSupervisors.keySet());
-        cluster = new Cluster(iNimbus, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
+        Assert.assertEquals(cached, bs.cachedSupervisors.keySet());
+        cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(), topologies, config);
         bs.schedule(topologies,cluster);
-        cluster = new Cluster(iNimbus, TestUtilsForBlacklistScheduler.removePortFromSupervisors(supMap,"sup-0",0),TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removePortFromSupervisors(supMap, "sup-0", 0),
+                TestUtilsForBlacklistScheduler.assignmentMapToImpl(cluster.getAssignments()), topologies, config);
         for (int i = 0 ;i < 20 ; i++){
             bs.schedule(topologies, cluster);
         }
         Set<Integer> cachedPorts = Sets.newHashSet(1, 2, 3);
         Assert.assertEquals(cachedPorts, bs.cachedSupervisors.get("sup-0"));
     }
+
+    @Test
+    public void blacklistSupervisorWithAddedPort() {
+        Config config = new Config();
+        config.putAll(Utils.readDefaultConfig());
+        config.put(DaemonConfig.BLACKLIST_SCHEDULER_TOLERANCE_TIME,10);
+        config.put(DaemonConfig.BLACKLIST_SCHEDULER_TOLERANCE_COUNT,2);
+        config.put(DaemonConfig.BLACKLIST_SCHEDULER_RESUME_TIME,300);
+
+        StormMetricsRegistry metricsRegistry = new StormMetricsRegistry();
+        scheduler = new BlacklistScheduler(new DefaultScheduler());
+        scheduler.prepare(config, metricsRegistry);
+
+        Map<String, TopologyDetails> topoMap = new HashMap<>();
+        TopologyDetails topo1 = TestUtilsForBlacklistScheduler.getTopology("topo-1", config, 5,
+                15, 1, 1, currentTime - 2, true);
+        topoMap.put(topo1.getId(), topo1);
+        Topologies topologies = new Topologies(topoMap);
+
+        INimbus iNimbus = new TestUtilsForBlacklistScheduler.INimbusTest();
+        ResourceMetrics resourceMetrics = new ResourceMetrics(metricsRegistry);
+        Map<String, SupervisorDetails> supMap = TestUtilsForBlacklistScheduler.genSupervisors(3,4);
+        Cluster cluster = new Cluster(iNimbus, resourceMetrics, supMap, new HashMap<String, SchedulerAssignmentImpl>(),
+                topologies, config);
+
+        // allow blacklist scheduler to cache the supervisor
+        scheduler.schedule(topologies, cluster);
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.addPortToSupervisors(supMap,
+                "sup-0", 4),TestUtilsForBlacklistScheduler.assignmentMapToImpl(
+                        cluster.getAssignments()), topologies, config);
+        // allow blacklist scheduler to cache the supervisor with an added port
+        scheduler.schedule(topologies, cluster);
+        // remove the port from the supervisor and make sure the blacklist scheduler can remove the port without
+        // throwing an exception
+        cluster = new Cluster(iNimbus, resourceMetrics, TestUtilsForBlacklistScheduler.removePortFromSupervisors(supMap,
+                "sup-0", 4),TestUtilsForBlacklistScheduler.assignmentMapToImpl(
+                        cluster.getAssignments()), topologies, config);
+        scheduler.schedule(topologies, cluster);
+    }
+
 }

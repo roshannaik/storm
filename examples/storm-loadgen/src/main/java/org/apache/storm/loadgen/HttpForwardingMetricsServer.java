@@ -41,7 +41,7 @@ import org.eclipse.jetty.servlet.ServletHolder;
  * A server that can listen for metrics from the HttpForwardingMetricsConsumer.
  */
 public abstract class HttpForwardingMetricsServer {
-    private Map conf;
+    private Map<String, Object> conf;
     private Server server = null;
     private int port = -1;
     private String url = null;
@@ -54,10 +54,11 @@ public abstract class HttpForwardingMetricsServer {
     };
 
     private class MetricsCollectionServlet extends HttpServlet {
+        @Override
         protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
             Input in = new Input(request.getInputStream());
             List<Object> metrics = des.get().deserializeFrom(in);
-            handle((TaskInfo)metrics.get(0), (Collection<DataPoint>)metrics.get(1), (String)metrics.get(2));
+            handle((TaskInfo) metrics.get(0), (Collection<DataPoint>) metrics.get(1), (String) metrics.get(2));
             response.setStatus(HttpServletResponse.SC_OK);
         }
     }
@@ -99,7 +100,7 @@ public abstract class HttpForwardingMetricsServer {
             context.setContextPath("/");
             server.setHandler(context);
  
-            context.addServlet(new ServletHolder(new MetricsCollectionServlet()),"/*");
+            context.addServlet(new ServletHolder(new MetricsCollectionServlet()), "/*");
 
             server.start();
         } catch (RuntimeException e) {

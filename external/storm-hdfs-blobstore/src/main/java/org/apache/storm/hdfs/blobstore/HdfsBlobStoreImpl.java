@@ -15,8 +15,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.storm.hdfs.blobstore;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Timer;
+import java.util.TimerTask;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -28,26 +37,27 @@ import org.apache.storm.utils.ObjectReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Timer;
-import java.util.TimerTask;
 
 /**
  * HDFS blob store impl.
  */
 public class HdfsBlobStoreImpl {
+
+    // blobstore directory is private!
+    public static final FsPermission BLOBSTORE_DIR_PERMISSION =
+            FsPermission.createImmutable((short) 0700); // rwx--------
+
     private static final Logger LOG = LoggerFactory.getLogger(HdfsBlobStoreImpl.class);
 
-    private static final long FULL_CLEANUP_FREQ = 60 * 60 * 1000l;
+    private static final long FULL_CLEANUP_FREQ = 60 * 60 * 1000L;
     private static final int BUCKETS = 1024;
     private static final String BLOBSTORE_DATA = "data";
     
     private Timer timer;
+
+    private Path fullPath;
+    private FileSystem fileSystem;
+    private Configuration hadoopConf;
 
     public class KeyInHashDirIterator implements Iterator<String> {
         private int currentBucket = 0;
@@ -61,7 +71,7 @@ public class HdfsBlobStoreImpl {
         private void primeNext() throws IOException {
             while (it == null && currentBucket < BUCKETS) {
                 String name = String.valueOf(currentBucket);
-                Path dir = new Path(_fullPath, name);
+                Path dir = new Path(fullPath, name);
                 try {
                     it = listKeys(dir);
                 } catch (FileNotFoundException e) {
@@ -110,31 +120,22 @@ public class HdfsBlobStoreImpl {
         }
     }
 
-
-    private Path _fullPath;
-    private FileSystem _fs;
-    private Configuration _hadoopConf;
-
-    // blobstore directory is private!
-    final public static FsPermission BLOBSTORE_DIR_PERMISSION =
-            FsPermission.createImmutable((short) 0700); // rwx--------
-
     public HdfsBlobStoreImpl(Path path, Map<String, Object> conf) throws IOException {
         this(path, conf, new Configuration());
     }
 
     public HdfsBlobStoreImpl(Path path, Map<String, Object> conf,
                              Configuration hconf) throws IOException {
-        LOG.info("Blob store based in {}", path);
-        _fullPath = path;
-        _hadoopConf = hconf;
-        _fs = path.getFileSystem(_hadoopConf);
+        LOG.debug("Blob store based in {}", path);
+        fullPath = path;
+        hadoopConf = hconf;
+        fileSystem = path.getFileSystem(hadoopConf);
 
-        if (!_fs.exists(_fullPath)) {
+        if (!fileSystem.exists(fullPath)) {
             FsPermission perms = new FsPermission(BLOBSTORE_DIR_PERMISSION);
-            boolean success = _fs.mkdirs(_fullPath, perms);
+            boolean success = fileSystem.mkdirs(fullPath, perms);
             if (!success) {
-                throw new IOException("Error creating blobstore directory: " + _fullPath);
+                throw new IOException("Error creating blobstore directory: " + fullPath);
             }
         }
 
@@ -157,22 +158,40 @@ public class HdfsBlobStoreImpl {
     }
 
     /**
-     * @return all keys that are available for reading.
-     * @throws IOException on any error.
+     * List relevant keys.
+     *
+     * @return all keys that are available for reading
+     * @throws IOException on any error
      */
     public Iterator<String> listKeys() throws IOException {
         return new KeyInHashDirIterator();
     }
 
+    protected Iterator<String> listKeys(Path path) throws IOException {
+        ArrayList<String> ret = new ArrayList<String>();
+        FileStatus[] files = fileSystem.listStatus(new Path[]{path});
+        if (files != null) {
+            for (FileStatus sub : files) {
+                try {
+                    ret.add(sub.getPath().getName().toString());
+                } catch (IllegalArgumentException e) {
+                    //Ignored the file did not match
+                    LOG.debug("Found an unexpected file in {} {}", path, sub.getPath().getName());
+                }
+            }
+        }
+        return ret.iterator();
+    }
+
     /**
      * Get an input stream for reading a part.
      *
-     * @param key the key of the part to read.
-     * @return the where to read the data from.
+     * @param key the key of the part to read
+     * @return the where to read the data from
      * @throws IOException on any error
      */
     public BlobStoreFile read(String key) throws IOException {
-        return new HdfsBlobStoreFile(getKeyDir(key), BLOBSTORE_DATA, _hadoopConf);
+        return new HdfsBlobStoreFile(getKeyDir(key), BLOBSTORE_DATA, hadoopConf);
     }
 
     /**
@@ -184,7 +203,7 @@ public class HdfsBlobStoreImpl {
      * @throws IOException on any error
      */
     public BlobStoreFile write(String key, boolean create) throws IOException {
-        return new HdfsBlobStoreFile(getKeyDir(key), true, create, _hadoopConf);
+        return new HdfsBlobStoreFile(getKeyDir(key), true, create, hadoopConf);
     }
 
     /**
@@ -197,8 +216,8 @@ public class HdfsBlobStoreImpl {
         Path dir = getKeyDir(key);
         boolean res = false;
         try {
-            _fs = dir.getFileSystem(_hadoopConf);
-            res = _fs.exists(dir);
+            fileSystem = dir.getFileSystem(hadoopConf);
+            res = fileSystem.exists(dir);
         } catch (IOException e) {
             LOG.warn("Exception checking for exists on: " + key);
         }
@@ -206,7 +225,7 @@ public class HdfsBlobStoreImpl {
     }
 
     /**
-     * Delete a key from the blob store
+     * Delete a key from the blob store.
      *
      * @param key the key to delete
      * @throws IOException on any error
@@ -214,17 +233,17 @@ public class HdfsBlobStoreImpl {
     public void deleteKey(String key) throws IOException {
         Path keyDir = getKeyDir(key);
         HdfsBlobStoreFile pf = new HdfsBlobStoreFile(keyDir, BLOBSTORE_DATA,
-                _hadoopConf);
+                hadoopConf);
         pf.delete();
         delete(keyDir);
     }
 
     protected Path getKeyDir(String key) {
         String hash = String.valueOf(Math.abs((long) key.hashCode()) % BUCKETS);
-        Path hashDir = new Path(_fullPath, hash);
+        Path hashDir = new Path(fullPath, hash);
 
         Path ret = new Path(hashDir, key);
-        LOG.debug("{} Looking for {} in {}", new Object[]{_fullPath, key, hash});
+        LOG.debug("{} Looking for {} in {}", new Object[]{fullPath, key, hash});
         return ret;
     }
 
@@ -238,7 +257,7 @@ public class HdfsBlobStoreImpl {
             if (!i.hasNext()) {
                 //The dir is empty, so try to delete it, may fail, but that is OK
                 try {
-                    _fs.delete(keyDir, true);
+                    fileSystem.delete(keyDir, true);
                 } catch (Exception e) {
                     LOG.warn("Could not delete " + keyDir + " will try again later");
                 }
@@ -256,12 +275,12 @@ public class HdfsBlobStoreImpl {
 
     protected Iterator<BlobStoreFile> listBlobStoreFiles(Path path) throws IOException {
         ArrayList<BlobStoreFile> ret = new ArrayList<BlobStoreFile>();
-        FileStatus[] files = _fs.listStatus(new Path[]{path});
+        FileStatus[] files = fileSystem.listStatus(new Path[]{path});
         if (files != null) {
             for (FileStatus sub : files) {
                 try {
                     ret.add(new HdfsBlobStoreFile(sub.getPath().getParent(), sub.getPath().getName(),
-                            _hadoopConf));
+                            hadoopConf));
                 } catch (IllegalArgumentException e) {
                     //Ignored the file did not match
                     LOG.warn("Found an unexpected file in {} {}", path, sub.getPath().getName());
@@ -271,37 +290,21 @@ public class HdfsBlobStoreImpl {
         return ret.iterator();
     }
 
-    protected Iterator<String> listKeys(Path path) throws IOException {
-        ArrayList<String> ret = new ArrayList<String>();
-        FileStatus[] files = _fs.listStatus(new Path[]{path});
-        if (files != null) {
-            for (FileStatus sub : files) {
-                try {
-                    ret.add(sub.getPath().getName().toString());
-                } catch (IllegalArgumentException e) {
-                    //Ignored the file did not match
-                    LOG.debug("Found an unexpected file in {} {}", path, sub.getPath().getName());
-                }
-            }
-        }
-        return ret.iterator();
-    }
-
     protected int getBlobReplication(String key) throws IOException {
         Path path = getKeyDir(key);
         Path dest = new Path(path, BLOBSTORE_DATA);
-        return _fs.getFileStatus(dest).getReplication();
+        return fileSystem.getFileStatus(dest).getReplication();
     }
 
     protected int updateBlobReplication(String key, int replication) throws IOException {
         Path path = getKeyDir(key);
         Path dest = new Path(path, BLOBSTORE_DATA);
-        _fs.setReplication(dest, (short) replication);
-        return _fs.getFileStatus(dest).getReplication();
+        fileSystem.setReplication(dest, (short) replication);
+        return fileSystem.getFileStatus(dest).getReplication();
     }
 
     protected void delete(Path path) throws IOException {
-        _fs.delete(path, true);
+        fileSystem.delete(path, true);
     }
 
     public void shutdown() {

@@ -1,21 +1,15 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
  * <p>
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the specific language governing permissions
+ * and limitations under the License.
  */
+
 package org.apache.storm.trident.windowing;
 
 import java.io.Serializable;
@@ -29,7 +23,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Inmemory store implementation of {@code WindowsStore} which can be backed by persistent store.
- *
  */
 public class InMemoryWindowsStore implements WindowsStore, Serializable {
 
@@ -43,8 +36,8 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
     }
 
     /**
-     *
-     * @param maxSize maximum size of inmemory store
+     * Creates a new in-memory window store.
+     * @param maxSize      maximum size of inmemory store
      * @param backingStore backing store containing the entries
      */
     public InMemoryWindowsStore(int maxSize, WindowsStore backingStore) {
@@ -57,7 +50,7 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
     public Object get(String key) {
         Object value = store.get(key);
 
-        if(value == null && backingStore != null) {
+        if (value == null && backingStore != null) {
             value = backingStore.get(key);
         }
 
@@ -75,7 +68,7 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
 
     @Override
     public Iterable<String> getAllKeys() {
-        if(backingStore != null) {
+        if (backingStore != null) {
             return backingStore.getAllKeys();
         }
 
@@ -88,7 +81,7 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
 
             @Override
             public String next() {
-                return  storeEnumeration.nextElement();
+                return storeEnumeration.nextElement();
             }
 
             @Override
@@ -107,15 +100,15 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
 
     @Override
     public void put(String key, Object value) {
-        _put(key, value);
+        put0(key, value);
 
-        if(backingStore != null) {
+        if (backingStore != null) {
             backingStore.put(key, value);
         }
     }
 
-    private void _put(String key, Object value) {
-        if(!canAdd()) {
+    private void put0(String key, Object value) {
+        if (!canAdd()) {
             return;
         }
 
@@ -124,7 +117,7 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
     }
 
     private void incrementCurrentSize() {
-        if(backingStore != null) {
+        if (backingStore != null) {
             currentSize.incrementAndGet();
         }
     }
@@ -136,28 +129,28 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
     @Override
     public void putAll(Collection<Entry> entries) {
         for (Entry entry : entries) {
-            _put(entry.key, entry.value);
+            put0(entry.key, entry.value);
         }
-        if(backingStore != null) {
+        if (backingStore != null) {
             backingStore.putAll(entries);
         }
     }
 
     @Override
     public void remove(String key) {
-        _remove(key);
+        remove0(key);
 
-        if(backingStore != null) {
+        if (backingStore != null) {
             backingStore.remove(key);
         }
     }
 
-    private void _remove(String key) {
+    private void remove0(String key) {
         Object oldValue = store.remove(key);
 
-        if(oldValue != null) {
+        if (oldValue != null) {
             decrementSize();
-            if(backingStore != null) {
+            if (backingStore != null) {
                 backingStore.remove(key);
             }
         }
@@ -165,7 +158,7 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
     }
 
     private void decrementSize() {
-        if(backingStore != null) {
+        if (backingStore != null) {
             currentSize.decrementAndGet();
         }
     }
@@ -173,10 +166,10 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
     @Override
     public void removeAll(Collection<String> keys) {
         for (String key : keys) {
-            _remove(key);
+            remove0(key);
         }
 
-        if(backingStore != null) {
+        if (backingStore != null) {
             backingStore.removeAll(keys);
         }
     }
@@ -185,16 +178,16 @@ public class InMemoryWindowsStore implements WindowsStore, Serializable {
     public void shutdown() {
         store.clear();
 
-        if(backingStore != null) {
+        if (backingStore != null) {
             backingStore.shutdown();
         }
     }
 
     @Override
     public String toString() {
-        return "InMemoryWindowsStore{" +
-                " store:size = " + store.size() +
-                " backingStore = " + backingStore +
-                '}';
+        return "InMemoryWindowsStore{"
+                + " store:size = " + store.size()
+                + " backingStore = " + backingStore
+                + '}';
     }
 }

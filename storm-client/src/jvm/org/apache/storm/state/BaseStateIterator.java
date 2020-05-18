@@ -1,55 +1,48 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
  * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
 
 package org.apache.storm.state;
-
-import com.google.common.collect.Iterators;
-import com.google.common.collect.PeekingIterator;
 
 import java.util.AbstractMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import org.apache.storm.shade.com.google.common.collect.Iterators;
+import org.apache.storm.shade.com.google.common.collect.PeekingIterator;
 
 /**
  * Base implementation of iterator over {@link KeyValueState}. Encoded/Decoded types of key and value are all generic.
  */
-public abstract class BaseStateIterator<K, V, KENCODED, VENCODED> implements Iterator<Map.Entry<K, V>> {
+public abstract class BaseStateIterator<K, V, KENCODEDT, VENCODEDT> implements Iterator<Map.Entry<K, V>> {
 
-    private final PeekingIterator<Map.Entry<KENCODED, VENCODED>> pendingPrepareIterator;
-    private final PeekingIterator<Map.Entry<KENCODED, VENCODED>> pendingCommitIterator;
-    private final Set<KENCODED> providedKeys;
+    private final PeekingIterator<Map.Entry<KENCODEDT, VENCODEDT>> pendingPrepareIterator;
+    private final PeekingIterator<Map.Entry<KENCODEDT, VENCODEDT>> pendingCommitIterator;
+    private final Set<KENCODEDT> providedKeys;
 
     private boolean firstLoad = true;
-    private PeekingIterator<Map.Entry<KENCODED, VENCODED>> pendingIterator;
-    private PeekingIterator<Map.Entry<KENCODED, VENCODED>> cachedResultIterator;
+    private PeekingIterator<Map.Entry<KENCODEDT, VENCODEDT>> pendingIterator;
+    private PeekingIterator<Map.Entry<KENCODEDT, VENCODEDT>> cachedResultIterator;
 
     /**
      * Constructor.
      *
      * @param pendingPrepareIterator The iterator of pendingPrepare
-     * @param pendingCommitIterator The iterator of pendingCommit
-     * @param initialProvidedKeys The initial value of provided keys
+     * @param pendingCommitIterator  The iterator of pendingCommit
+     * @param initialProvidedKeys    The initial value of provided keys
      */
-    public BaseStateIterator(Iterator<Map.Entry<KENCODED, VENCODED>> pendingPrepareIterator,
-                             Iterator<Map.Entry<KENCODED, VENCODED>> pendingCommitIterator,
-                             Set<KENCODED> initialProvidedKeys) {
+    public BaseStateIterator(Iterator<Map.Entry<KENCODEDT, VENCODEDT>> pendingPrepareIterator,
+                             Iterator<Map.Entry<KENCODEDT, VENCODEDT>> pendingCommitIterator,
+                             Set<KENCODEDT> initialProvidedKeys) {
         this.pendingPrepareIterator = Iterators.peekingIterator(pendingPrepareIterator);
         this.pendingCommitIterator = Iterators.peekingIterator(pendingCommitIterator);
         this.providedKeys = initialProvidedKeys;
@@ -92,7 +85,7 @@ public abstract class BaseStateIterator<K, V, KENCODED, VENCODED> implements Ite
     }
 
     private void fillCachedResultIterator() {
-        Iterator<Map.Entry<KENCODED, VENCODED>> iterator = loadChunkFromStateStorage();
+        Iterator<Map.Entry<KENCODEDT, VENCODEDT>> iterator = loadChunkFromStateStorage();
         if (iterator != null) {
             cachedResultIterator = Iterators.peekingIterator(iterator);
         } else {
@@ -106,7 +99,7 @@ public abstract class BaseStateIterator<K, V, KENCODED, VENCODED> implements Ite
             throw new NoSuchElementException();
         }
 
-        Map.Entry<KENCODED, VENCODED> keyValue = pendingIterator.next();
+        Map.Entry<KENCODEDT, VENCODEDT> keyValue = pendingIterator.next();
 
         K key = decodeKey(keyValue.getKey());
         V value = decodeValue(keyValue.getValue());
@@ -125,7 +118,7 @@ public abstract class BaseStateIterator<K, V, KENCODED, VENCODED> implements Ite
      *
      * @return Iterator of loaded state KVs
      */
-    protected abstract Iterator<Map.Entry<KENCODED, VENCODED>> loadChunkFromStateStorage();
+    protected abstract Iterator<Map.Entry<KENCODEDT, VENCODEDT>> loadChunkFromStateStorage();
 
     /**
      * Check whether end of data is reached from storage state KVs.
@@ -140,7 +133,7 @@ public abstract class BaseStateIterator<K, V, KENCODED, VENCODED> implements Ite
      * @param key raw type of encoded key
      * @return Decoded value of key
      */
-    protected abstract K decodeKey(KENCODED key);
+    protected abstract K decodeKey(KENCODEDT key);
 
     /**
      * Decode value to convert encoded type of value to state value type.
@@ -148,7 +141,7 @@ public abstract class BaseStateIterator<K, V, KENCODED, VENCODED> implements Ite
      * @param value raw type of encoded value
      * @return Decoded value of value
      */
-    protected abstract V decodeValue(VENCODED value);
+    protected abstract V decodeValue(VENCODEDT value);
 
     /**
      * Check whether the value is tombstone (deletion mark) value.
@@ -156,12 +149,12 @@ public abstract class BaseStateIterator<K, V, KENCODED, VENCODED> implements Ite
      * @param value the value to check
      * @return true if the value is tombstone, false otherwise
      */
-    protected abstract boolean isTombstoneValue(VENCODED value);
+    protected abstract boolean isTombstoneValue(VENCODEDT value);
 
-    private boolean seekToAvailableEntry(PeekingIterator<Map.Entry<KENCODED, VENCODED>> iterator) {
+    private boolean seekToAvailableEntry(PeekingIterator<Map.Entry<KENCODEDT, VENCODEDT>> iterator) {
         if (iterator != null) {
             while (iterator.hasNext()) {
-                Map.Entry<KENCODED, VENCODED> entry = iterator.peek();
+                Map.Entry<KENCODEDT, VENCODEDT> entry = iterator.peek();
                 if (!providedKeys.contains(entry.getKey())) {
                     if (isTombstoneValue(entry.getValue())) {
                         providedKeys.add(entry.getKey());

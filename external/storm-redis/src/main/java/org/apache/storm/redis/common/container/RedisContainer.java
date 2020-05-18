@@ -18,14 +18,13 @@
 
 package org.apache.storm.redis.common.container;
 
+import java.io.Closeable;
+import java.io.IOException;
 import org.apache.storm.redis.common.adapter.RedisCommandsAdapterJedis;
 import org.apache.storm.redis.common.commands.RedisCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.JedisPool;
-
-import java.io.Closeable;
-import java.io.IOException;
 
 public class RedisContainer implements RedisCommandsInstanceContainer {
     private static final Logger LOG = LoggerFactory.getLogger(JedisContainer.class);
@@ -33,7 +32,8 @@ public class RedisContainer implements RedisCommandsInstanceContainer {
     private JedisPool jedisPool;
 
     /**
-     * Constructor
+     * Constructor.
+     *
      * @param jedisPool JedisPool which actually manages Jedis instances
      */
     public RedisContainer(JedisPool jedisPool) {

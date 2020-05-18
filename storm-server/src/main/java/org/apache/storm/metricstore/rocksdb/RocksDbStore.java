@@ -1,19 +1,12 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the specific language governing permissions
+ * and limitations under the License.
  */
 
 package org.apache.storm.metricstore.rocksdb;
@@ -25,7 +18,6 @@ import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicReference;
-
 import org.apache.storm.DaemonConfig;
 import org.apache.storm.metric.StormMetricsRegistry;
 import org.apache.storm.metricstore.AggLevel;
@@ -33,6 +25,7 @@ import org.apache.storm.metricstore.FilterOptions;
 import org.apache.storm.metricstore.Metric;
 import org.apache.storm.metricstore.MetricException;
 import org.apache.storm.metricstore.MetricStore;
+import org.apache.storm.utils.ConfigUtils;
 import org.apache.storm.utils.ObjectReader;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.IndexType;
@@ -48,9 +41,9 @@ import org.slf4j.LoggerFactory;
 
 
 public class RocksDbStore implements MetricStore, AutoCloseable {
+    static final int INVALID_METADATA_STRING_ID = 0;
     private static final Logger LOG = LoggerFactory.getLogger(RocksDbStore.class);
     private static final int MAX_QUEUE_CAPACITY = 4000;
-    static final int INVALID_METADATA_STRING_ID = 0;
     RocksDB db;
     private ReadOnlyStringMetadataCache readOnlyStringMetadataCache = null;
     private BlockingQueue queue = new LinkedBlockingQueue(MAX_QUEUE_CAPACITY);
@@ -58,20 +51,18 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
     private MetricsCleaner metricsCleaner = null;
     private Meter failureMeter = null;
 
-    interface RocksDbScanCallback {
-        boolean cb(RocksDbKey key, RocksDbValue val);  // return false to stop scan
-    }
-
     /**
      * Create metric store instance using the configurations provided via the config map.
      *
      * @param config Storm config map
+     * @param metricsRegistry The Nimbus daemon metrics registry
      * @throws MetricException on preparation error
      */
-    public void prepare(Map config) throws MetricException {
+    @Override
+    public void prepare(Map<String, Object> config, StormMetricsRegistry metricsRegistry) throws MetricException {
         validateConfig(config);
 
-        this.failureMeter = StormMetricsRegistry.registerMeter("RocksDB:metric-failures");
+        this.failureMeter = metricsRegistry.registerMeter("RocksDB:metric-failures");
 
         RocksDB.loadLibrary();
         boolean createIfMissing = ObjectReader.getBoolean(config.get(DaemonConfig.STORM_ROCKSDB_CREATE_IF_MISSING), false);
@@ -98,7 +89,7 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
         if (config.containsKey(DaemonConfig.STORM_ROCKSDB_METRIC_DELETION_PERIOD_HOURS)) {
             deletionPeriod = Integer.parseInt(config.get(DaemonConfig.STORM_ROCKSDB_METRIC_DELETION_PERIOD_HOURS).toString());
         }
-        metricsCleaner = new MetricsCleaner(this, retentionHours, deletionPeriod, failureMeter);
+        metricsCleaner = new MetricsCleaner(this, retentionHours, deletionPeriod, failureMeter, metricsRegistry);
 
         // create thread to process insertion of all metrics
         metricsWriter = new RocksDbMetricsWriter(this, this.queue, this.failureMeter);
@@ -125,14 +116,14 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
      * @throws MetricException if there is a missing required configuration or if the store does not exist but
      *                         the config specifies not to create the store
      */
-    private void validateConfig(Map config) throws MetricException {
+    private void validateConfig(Map<String, Object> config) throws MetricException {
         if (!(config.containsKey(DaemonConfig.STORM_ROCKSDB_LOCATION))) {
             throw new MetricException("Not a vaild RocksDB configuration - Missing store location " + DaemonConfig.STORM_ROCKSDB_LOCATION);
         }
 
         if (!(config.containsKey(DaemonConfig.STORM_ROCKSDB_CREATE_IF_MISSING))) {
             throw new MetricException("Not a vaild RocksDB configuration - Does not specify creation policy "
-                    + DaemonConfig.STORM_ROCKSDB_CREATE_IF_MISSING);
+                                      + DaemonConfig.STORM_ROCKSDB_CREATE_IF_MISSING);
         }
 
         // validate path defined
@@ -147,26 +138,26 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
 
         if (!(config.containsKey(DaemonConfig.STORM_ROCKSDB_METADATA_STRING_CACHE_CAPACITY))) {
             throw new MetricException("Not a valid RocksDB configuration - Missing metadata string cache size "
-                    + DaemonConfig.STORM_ROCKSDB_METADATA_STRING_CACHE_CAPACITY);
+                                      + DaemonConfig.STORM_ROCKSDB_METADATA_STRING_CACHE_CAPACITY);
         }
 
         if (!config.containsKey(DaemonConfig.STORM_ROCKSDB_METRIC_RETENTION_HOURS)) {
             throw new MetricException("Not a valid RocksDB configuration - Missing metric retention "
-                    + DaemonConfig.STORM_ROCKSDB_METRIC_RETENTION_HOURS);
+                                      + DaemonConfig.STORM_ROCKSDB_METRIC_RETENTION_HOURS);
         }
     }
 
-    private String getRocksDbAbsoluteDir(Map conf) throws MetricException {
-        String storePath = (String)conf.get(DaemonConfig.STORM_ROCKSDB_LOCATION);
+    private String getRocksDbAbsoluteDir(Map<String, Object> conf) throws MetricException {
+        String storePath = (String) conf.get(DaemonConfig.STORM_ROCKSDB_LOCATION);
         if (storePath == null) {
             throw new MetricException("Not a vaild RocksDB configuration - Missing store location " + DaemonConfig.STORM_ROCKSDB_LOCATION);
         } else {
             if (new File(storePath).isAbsolute()) {
                 return storePath;
             } else {
-                String stormHome = System.getProperty("storm.home");
+                String stormHome = System.getProperty(ConfigUtils.STORM_HOME);
                 if (stormHome == null) {
-                    throw new MetricException("storm.home not set");
+                    throw new MetricException(ConfigUtils.STORM_HOME + " not set");
                 }
                 return (stormHome + File.separator + storePath);
             }
@@ -179,6 +170,7 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
      * @param metric  Metric to store
      * @throws MetricException  if database write fails
      */
+    @Override
     public void insert(Metric metric) throws MetricException {
         try {
             // don't bother blocking on a full queue, just drop metrics in case we can't keep up
@@ -201,7 +193,7 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
      * Fill out the numeric values for a metric.
      *
      * @param metric  Metric to populate
-     * @return   true if the metric was populated, false otherwise
+     * @return true if the metric was populated, false otherwise
      * @throws MetricException  if read from database fails
      */
     @Override
@@ -234,7 +226,7 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
         }
 
         RocksDbKey key = RocksDbKey.createMetricKey(metric.getAggLevel(), topologyId, metric.getTimestamp(), metricId,
-                componentId, executorId, hostId, metric.getPort(), streamId);
+                                                    componentId, executorId, hostId, metric.getPort(), streamId);
 
         return populateFromKey(key, metric);
     }
@@ -282,7 +274,12 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
         }
 
         // attempt to find the string in the database
-        stringMetadata = rocksDbGetStringMetadata(type, s);
+        try {
+            stringMetadata = rocksDbGetStringMetadata(type, s);
+        } catch (RocksDBException e) {
+            throw new MetricException("Error reading metric data", e);
+        }
+
         if (stringMetadata != null) {
             id = stringMetadata.getStringId();
 
@@ -298,7 +295,7 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
     }
 
     // scans the database to look for a metadata string and returns the metadata info
-    StringMetadata rocksDbGetStringMetadata(KeyType type, String s) {
+    StringMetadata rocksDbGetStringMetadata(KeyType type, String s) throws RocksDBException {
         RocksDbKey firstKey = RocksDbKey.getInitialKey(type);
         RocksDbKey lastKey = RocksDbKey.getLastKey(type);
         final AtomicReference<StringMetadata> reference = new AtomicReference<>();
@@ -314,20 +311,21 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
     }
 
     // scans from key start to the key before end, calling back until callback indicates not to process further
-    void scanRange(RocksDbKey start, RocksDbKey end, RocksDbScanCallback fn) {
+    void scanRange(RocksDbKey start, RocksDbKey end, RocksDbScanCallback fn) throws RocksDBException {
         try (ReadOptions ro = new ReadOptions()) {
             ro.setTotalOrderSeek(true);
-            RocksIterator iterator = db.newIterator(ro);
-            for (iterator.seek(start.getRaw()); iterator.isValid(); iterator.next()) {
-                RocksDbKey key = new RocksDbKey(iterator.key());
-                if (key.compareTo(end) >= 0) { // past limit, quit
-                    return;
-                }
+            try (RocksIterator iterator = db.newIterator(ro)) {
+                for (iterator.seek(start.getRaw()); iterator.isValid(); iterator.next()) {
+                    RocksDbKey key = new RocksDbKey(iterator.key());
+                    if (key.compareTo(end) >= 0) { // past limit, quit
+                        return;
+                    }
 
-                RocksDbValue val = new RocksDbValue(iterator.value());
-                if (!fn.cb(key, val)) {
-                    // if cb returns false, we are done with this section of rows
-                    return;
+                    RocksDbValue val = new RocksDbValue(iterator.value());
+                    if (!fn.cb(key, val)) {
+                        // if cb returns false, we are done with this section of rows
+                        return;
+                    }
                 }
             }
         }
@@ -350,6 +348,7 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
      * @param scanCallback  callback for each Metric found
      * @throws MetricException  on error
      */
+    @Override
     public void scan(FilterOptions filter, ScanCallback scanCallback) throws MetricException {
         scanInternal(filter, scanCallback, null);
     }
@@ -455,88 +454,92 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
             endStreamId = streamId;
         }
 
-        ReadOptions ro = new ReadOptions();
-        ro.setTotalOrderSeek(true);
+        try (ReadOptions ro = new ReadOptions()) {
+            ro.setTotalOrderSeek(true);
 
-        for (AggLevel aggLevel : filter.getAggLevels()) {
+            for (AggLevel aggLevel : filter.getAggLevels()) {
 
-            RocksDbKey startKey = RocksDbKey.createMetricKey(aggLevel, startTopologyId, startTime, startMetricId,
-                    startComponentId, startExecutorId, startHostId, startPort, startStreamId);
-            RocksDbKey endKey = RocksDbKey.createMetricKey(aggLevel, endTopologyId, endTime, endMetricId,
-                    endComponentId, endExecutorId, endHostId, endPort, endStreamId);
+                RocksDbKey startKey = RocksDbKey.createMetricKey(aggLevel, startTopologyId, startTime, startMetricId,
+                        startComponentId, startExecutorId, startHostId, startPort, startStreamId);
+                RocksDbKey endKey = RocksDbKey.createMetricKey(aggLevel, endTopologyId, endTime, endMetricId,
+                        endComponentId, endExecutorId, endHostId, endPort, endStreamId);
 
-            RocksIterator iterator = db.newIterator(ro);
-            for (iterator.seek(startKey.getRaw()); iterator.isValid(); iterator.next()) {
-                RocksDbKey key = new RocksDbKey(iterator.key());
+                try (RocksIterator iterator = db.newIterator(ro)) {
+                    for (iterator.seek(startKey.getRaw()); iterator.isValid(); iterator.next()) {
+                        RocksDbKey key = new RocksDbKey(iterator.key());
 
-                if (key.compareTo(endKey) > 0) { // past limit, quit
-                    break;
-                }
+                        if (key.compareTo(endKey) > 0) { // past limit, quit
+                            break;
+                        }
 
-                if (startTopologyId != 0 && key.getTopologyId() != startTopologyId) {
-                    continue;
-                }
+                        if (startTopologyId != 0 && key.getTopologyId() != startTopologyId) {
+                            continue;
+                        }
 
-                long timestamp = key.getTimestamp();
-                if (timestamp < startTime || timestamp > endTime) {
-                    continue;
-                }
+                        long timestamp = key.getTimestamp();
+                        if (timestamp < startTime || timestamp > endTime) {
+                            continue;
+                        }
 
-                if (startMetricId != 0 && key.getMetricId() != startMetricId) {
-                    continue;
-                }
+                        if (startMetricId != 0 && key.getMetricId() != startMetricId) {
+                            continue;
+                        }
 
-                if (startComponentId != 0 && key.getComponentId() != startComponentId) {
-                    continue;
-                }
+                        if (startComponentId != 0 && key.getComponentId() != startComponentId) {
+                            continue;
+                        }
 
-                if (startExecutorId != 0 && key.getExecutorId() != startExecutorId) {
-                    continue;
-                }
+                        if (startExecutorId != 0 && key.getExecutorId() != startExecutorId) {
+                            continue;
+                        }
 
-                if (startHostId != 0 && key.getHostnameId() != startHostId) {
-                    continue;
-                }
+                        if (startHostId != 0 && key.getHostnameId() != startHostId) {
+                            continue;
+                        }
 
-                if (startPort != 0 && key.getPort() != startPort) {
-                    continue;
-                }
+                        if (startPort != 0 && key.getPort() != startPort) {
+                            continue;
+                        }
 
-                if (startStreamId != 0 && key.getStreamId() != startStreamId) {
-                    continue;
-                }
+                        if (startStreamId != 0 && key.getStreamId() != startStreamId) {
+                            continue;
+                        }
 
-                RocksDbValue val = new RocksDbValue(iterator.value());
+                        RocksDbValue val = new RocksDbValue(iterator.value());
 
-                if (scanCallback != null) {
-                    try {
-                        // populate a metric
-                        String metricName = metadataIdToString(KeyType.METRIC_STRING, key.getMetricId(), idToStringCache);
-                        String topologyId = metadataIdToString(KeyType.TOPOLOGY_STRING, key.getTopologyId(), idToStringCache);
-                        String componentId = metadataIdToString(KeyType.COMPONENT_STRING, key.getComponentId(), idToStringCache);
-                        String executorId = metadataIdToString(KeyType.EXEC_ID_STRING, key.getExecutorId(), idToStringCache);
-                        String hostname = metadataIdToString(KeyType.HOST_STRING, key.getHostnameId(), idToStringCache);
-                        String streamId = metadataIdToString(KeyType.STREAM_ID_STRING, key.getStreamId(), idToStringCache);
+                        if (scanCallback != null) {
+                            try {
+                                // populate a metric
+                                String metricName = metadataIdToString(KeyType.METRIC_STRING, key.getMetricId(), idToStringCache);
+                                String topologyId = metadataIdToString(KeyType.TOPOLOGY_STRING, key.getTopologyId(), idToStringCache);
+                                String componentId = metadataIdToString(KeyType.COMPONENT_STRING, key.getComponentId(), idToStringCache);
+                                String executorId = metadataIdToString(KeyType.EXEC_ID_STRING, key.getExecutorId(), idToStringCache);
+                                String hostname = metadataIdToString(KeyType.HOST_STRING, key.getHostnameId(), idToStringCache);
+                                String streamId = metadataIdToString(KeyType.STREAM_ID_STRING, key.getStreamId(), idToStringCache);
 
-                        Metric metric = new Metric(metricName, timestamp, topologyId, 0.0, componentId, executorId, hostname,
-                                streamId, key.getPort(), aggLevel);
+                                Metric metric = new Metric(metricName, timestamp, topologyId, 0.0, componentId, executorId, hostname,
+                                        streamId, key.getPort(), aggLevel);
 
-                        val.populateMetric(metric);
+                                val.populateMetric(metric);
 
-                        // callback to caller
-                        scanCallback.cb(metric);
-                    } catch (MetricException e) {
-                        LOG.warn("Failed to report found metric: {}", e.getMessage());
-                    }
-                } else {
-                    if (!rawCallback.cb(key, val)) {
-                        return;
+                                // callback to caller
+                                scanCallback.cb(metric);
+                            } catch (MetricException e) {
+                                LOG.warn("Failed to report found metric: {}", e.getMessage());
+                            }
+                        } else {
+                            try {
+                                if (!rawCallback.cb(key, val)) {
+                                    return;
+                                }
+                            } catch (RocksDBException e) {
+                                throw new MetricException("Error reading metrics data", e);
+                            }
+                        }
                     }
                 }
             }
-            iterator.close();
         }
-        ro.close();
     }
 
     // Finds the metadata string that matches the string Id and type provided.  The string should exist, as it is
@@ -561,7 +564,7 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
             s = rdbValue.getMetdataString();
             lookupCache.put(id, s);
             return s;
-        }  catch (RocksDBException e) {
+        } catch (RocksDBException e) {
             if (this.failureMeter != null) {
                 this.failureMeter.mark();
             }
@@ -575,7 +578,7 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
              WriteOptions writeOps = new WriteOptions()) {
 
             scanRaw(filter, (RocksDbKey key, RocksDbValue value) -> {
-                writeBatch.remove(key.getRaw());
+                writeBatch.delete(key.getRaw());
                 return true;
             });
 
@@ -610,15 +613,19 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
             // search all metadata strings
             RocksDbKey topologyMetadataPrefix = RocksDbKey.getPrefix(KeyType.METADATA_STRING_START);
             RocksDbKey lastPrefix = RocksDbKey.getPrefix(KeyType.METADATA_STRING_END);
-            scanRange(topologyMetadataPrefix, lastPrefix, (key, value) -> {
-                // we'll assume the metadata was recently used if still in the cache.
-                if (!readOnlyStringMetadataCache.contains(key.getMetadataStringId())) {
-                    if (value.getLastTimestamp() < firstValidTimestamp) {
-                        writeBatch.remove(key.getRaw());
+            try {
+                scanRange(topologyMetadataPrefix, lastPrefix, (key, value) -> {
+                    // we'll assume the metadata was recently used if still in the cache.
+                    if (!readOnlyStringMetadataCache.contains(key.getMetadataStringId())) {
+                        if (value.getLastTimestamp() < firstValidTimestamp) {
+                            writeBatch.delete(key.getRaw());
+                        }
                     }
-                }
-                return true;
-            });
+                    return true;
+                });
+            } catch (RocksDBException e) {
+                throw new MetricException("Error reading metric data", e);
+            }
 
             if (writeBatch.count() > 0) {
                 LOG.info("Deleting {} metadata strings", writeBatch.count());
@@ -634,6 +641,10 @@ public class RocksDbStore implements MetricStore, AutoCloseable {
                 }
             }
         }
+    }
+
+    interface RocksDbScanCallback {
+        boolean cb(RocksDbKey key, RocksDbValue val) throws RocksDBException;  // return false to stop scan
     }
 }
 

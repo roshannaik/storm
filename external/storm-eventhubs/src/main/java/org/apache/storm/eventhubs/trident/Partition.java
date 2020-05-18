@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *******************************************************************************/
+
 package org.apache.storm.eventhubs.trident;
 
 import java.io.Serializable;
@@ -22,18 +23,18 @@ import org.apache.storm.eventhubs.spout.EventHubSpoutConfig;
 import org.apache.storm.trident.spout.ISpoutPartition;
 
 /**
- * Represents an EventHub partition
+ * Represents an EventHub partition.
  */
 public class Partition implements ISpoutPartition, Serializable {
-  private static final long serialVersionUID = 1L;
-  String partitionId;
-  
-  public Partition(EventHubSpoutConfig config, String partitionId) {
-    this.partitionId = partitionId;
-  }
-  
-  @Override
-  public String getId() {
-    return partitionId;
-  }
+    private static final long serialVersionUID = 1L;
+    String partitionId;
+
+    public Partition(EventHubSpoutConfig config, String partitionId) {
+        this.partitionId = partitionId;
+    }
+
+    @Override
+    public String getId() {
+        return partitionId;
+    }
 }

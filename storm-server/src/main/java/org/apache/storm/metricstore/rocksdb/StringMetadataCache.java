@@ -1,19 +1,12 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the specific language governing permissions
+ * and limitations under the License.
  */
 
 package org.apache.storm.metricstore.rocksdb;
@@ -39,12 +32,23 @@ import org.slf4j.LoggerFactory;
  */
 
 public class StringMetadataCache implements LruMap.CacheEvictionCallback<String, StringMetadata>,
-        WritableStringMetadataCache, ReadOnlyStringMetadataCache {
+                                            WritableStringMetadataCache, ReadOnlyStringMetadataCache {
     private static final Logger LOG = LoggerFactory.getLogger(StringMetadataCache.class);
+    private static StringMetadataCache instance = null;
     private Map<String, StringMetadata> lruStringCache;
     private Map<Integer, String> hashToString = new ConcurrentHashMap<>();
     private RocksDbMetricsWriter dbWriter;
-    private static StringMetadataCache instance = null;
+
+    /**
+     * Constructor to create a cache.
+     *
+     * @param dbWriter   The rocks db writer instance the cache should use when evicting data
+     * @param capacity  The cache size
+     */
+    private StringMetadataCache(RocksDbMetricsWriter dbWriter, int capacity) {
+        lruStringCache = Collections.synchronizedMap(new LruMap<>(capacity, this));
+        this.dbWriter = dbWriter;
+    }
 
     /**
      * Initializes the cache instance.
@@ -87,23 +91,17 @@ public class StringMetadataCache implements LruMap.CacheEvictionCallback<String,
         }
     }
 
-    /**
-     * Constructor to create a cache.
-     *
-     * @param dbWriter   The rocks db writer instance the cache should use when evicting data
-     * @param capacity  The cache size
-     */
-    private StringMetadataCache(RocksDbMetricsWriter dbWriter, int capacity) {
-        lruStringCache = Collections.synchronizedMap(new LruMap<>(capacity, this));
-        this.dbWriter = dbWriter;
+    static void cleanUp() {
+        instance = null;
     }
 
     /**
      * Get the string metadata from the cache.
      *
      * @param s   The string to look for
-     * @return   the metadata associated with the string or null if not found
+     * @return the metadata associated with the string or null if not found
      */
+    @Override
     public StringMetadata get(String s) {
         return lruStringCache.get(s);
     }
@@ -111,16 +109,17 @@ public class StringMetadataCache implements LruMap.CacheEvictionCallback<String,
     /**
      * Add the string metadata to the cache.
      *
-     * NOTE: this can cause data to be evicted from the cache when full.  When this occurs, the evictionCallback() method
+     * <p>NOTE: this can cause data to be evicted from the cache when full.  When this occurs, the evictionCallback() method
      * is called to store the metadata back into the RocksDB database.
      *
-     * This method is only exposed to the WritableStringMetadataCache interface.
+     * <p>This method is only exposed to the WritableStringMetadataCache interface.
      *
      * @param s   The string to add
      * @param stringMetadata  The string's metadata
      * @param newEntry   Indicates the metadata is being used for the first time and should be written to RocksDB immediately
      * @throws MetricException   when evicted data fails to save to the database or when the database is shutdown
      */
+    @Override
     public void put(String s, StringMetadata stringMetadata, boolean newEntry) throws MetricException {
         if (dbWriter.isShutdown()) {
             // another thread could be writing out the metadata cache to the database.
@@ -145,6 +144,7 @@ public class StringMetadataCache implements LruMap.CacheEvictionCallback<String,
      * @param val  The evicted string's metadata
      * @throws RuntimeException   when evicted data fails to save to the database
      */
+    @Override
     public void evictionCallback(String key, StringMetadata val) {
         writeMetadataToDisk(key, val);
     }
@@ -169,8 +169,9 @@ public class StringMetadataCache implements LruMap.CacheEvictionCallback<String,
      * Determines if a string Id is contained in the cache.
      *
      * @param stringId   The string Id to check
-     * @return   true if the Id is in the cache, false otherwise
+     * @return true if the Id is in the cache, false otherwise
      */
+    @Override
     public boolean contains(Integer stringId) {
         return hashToString.containsKey(stringId);
     }
@@ -179,8 +180,9 @@ public class StringMetadataCache implements LruMap.CacheEvictionCallback<String,
      * Returns the string matching the string Id if in the cache.
      *
      * @param stringId   The string Id to check
-     * @return   the associated string if the Id is in the cache, null otherwise
+     * @return the associated string if the Id is in the cache, null otherwise
      */
+    @Override
     public String getMetadataString(Integer stringId) {
         return hashToString.get(stringId);
     }
@@ -188,14 +190,11 @@ public class StringMetadataCache implements LruMap.CacheEvictionCallback<String,
     /**
      * Get the map of the cache contents.  Provided to allow writing the data to RocksDB on shutdown.
      *
-     * @return   the string metadata map entrySet
+     * @return the string metadata map entrySet
      */
+    @Override
     public Set<Map.Entry<String, StringMetadata>> entrySet() {
         return lruStringCache.entrySet();
-    }
-
-    static void cleanUp() {
-        instance = null;
     }
 
 }

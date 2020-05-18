@@ -1,21 +1,15 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the specific language governing permissions
+ * and limitations under the License.
  */
+
 package org.apache.storm.cassandra.trident.state;
 
 import com.datastax.driver.core.HostDistance;
@@ -23,6 +17,11 @@ import com.datastax.driver.core.PoolingOptions;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Semaphore;
 import org.apache.storm.cassandra.client.SimpleClient;
 import org.apache.storm.cassandra.client.SimpleClientProvider;
 import org.apache.storm.cassandra.query.AyncCQLResultSetValuesMapper;
@@ -41,31 +40,23 @@ import org.apache.storm.tuple.Values;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Semaphore;
-
 /**
  * An IBackingState implementation for Cassandra.
  *
- * The implementation stores state as a binary blob in cassandra using a {@link Serializer}.
+ * <p>The implementation stores state as a binary blob in cassandra using a {@link Serializer}.
  * It supports Opaque, Transactional and NonTransactional states, given a matching serializer.
  *
- * Configuration is done with three separate constructs:
+ * <p>Configuration is done with three separate constructs:
  *  - One tuple mapper for multiGet, which should map keys to a select statement and return {@link Values}.
  *  - One state mapper, which maps the state to/from a {@link Values} representation, which is used for binding.
  *  - One tuple mapper for multiPut, which should map {@link Values} to an INSERT or UPDATE statement.
  *
- * {@link #multiPut(List, List)} updates Cassandra with parallel statements.
+ * <p>{@link #multiPut(List, List)} updates Cassandra with parallel statements.
  * {@link #multiGet(List)} queries Cassandra with parallel statements.
  *
- * Parallelism defaults to half the maximum requests per host, either local or remote whichever is
+ * <p>Parallelism defaults to half the maximum requests per host, either local or remote whichever is
  * lower. The driver defaults to 256 for remote hosts and 1024 for local hosts, so the default value is 128
  * unless the driver is configured otherwise.
- *
- * @param <T>
  */
 public class CassandraBackingMap<T> implements IBackingMap<T> {
 
@@ -99,8 +90,8 @@ public class CassandraBackingMap<T> implements IBackingMap<T> {
         if (options.maxParallelism == null || options.maxParallelism <= 0) {
             PoolingOptions po = session.getCluster().getConfiguration().getPoolingOptions();
             Integer maxRequestsPerHost = Math.min(
-                    po.getMaxConnectionsPerHost(HostDistance.LOCAL) * po.getMaxRequestsPerConnection(HostDistance.LOCAL),
-                    po.getMaxConnectionsPerHost(HostDistance.REMOTE) * po.getMaxRequestsPerConnection(HostDistance.REMOTE)
+                po.getMaxConnectionsPerHost(HostDistance.LOCAL) * po.getMaxRequestsPerConnection(HostDistance.LOCAL),
+                po.getMaxConnectionsPerHost(HostDistance.REMOTE) * po.getMaxRequestsPerConnection(HostDistance.REMOTE)
             );
             options.maxParallelism = maxRequestsPerHost / 2;
             LOG.info("Parallelism default set to {}", options.maxParallelism);
@@ -127,7 +118,7 @@ public class CassandraBackingMap<T> implements IBackingMap<T> {
         }
 
         List<List<Values>> results = getResultMapper
-                .map(session, selects, keyTuples);
+            .map(session, selects, keyTuples);
 
         List<T> states = new ArrayList<>();
         for (List<Values> values : results) {
@@ -180,6 +171,7 @@ public class CassandraBackingMap<T> implements IBackingMap<T> {
             return this;
         }
 
+        @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
         public Options<T> withNonTransactionalJSONBinaryState(String fieldName) {
             this.stateMapper = new SerializedStateMapper<>(fieldName, new JSONNonTransactionalSerializer());
             return this;
@@ -190,6 +182,7 @@ public class CassandraBackingMap<T> implements IBackingMap<T> {
             return this;
         }
 
+        @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
         public Options<T> withTransactionalJSONBinaryState(String fieldName) {
             this.stateMapper = new SerializedStateMapper<>(fieldName, new JSONTransactionalSerializer());
             return this;
@@ -200,6 +193,7 @@ public class CassandraBackingMap<T> implements IBackingMap<T> {
             return this;
         }
 
+        @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
         public Options<T> withOpaqueJSONBinaryState(String fieldName) {
             this.stateMapper = new SerializedStateMapper<>(fieldName, new JSONOpaqueSerializer());
             return this;
@@ -228,12 +222,12 @@ public class CassandraBackingMap<T> implements IBackingMap<T> {
         @Override
         public String toString() {
             return String.format("%s: [keys: %s, StateMapper: %s, getMapper: %s, putMapper: %s, maxParallelism: %d",
-                    this.getClass().getSimpleName(),
-                    keyFields,
-                    stateMapper,
-                    getMapper,
-                    putMapper,
-                    maxParallelism
+                                 this.getClass().getSimpleName(),
+                                 keyFields,
+                                 stateMapper,
+                                 getMapper,
+                                 putMapper,
+                                 maxParallelism
             );
         }
     }

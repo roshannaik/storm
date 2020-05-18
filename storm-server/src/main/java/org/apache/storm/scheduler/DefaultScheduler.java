@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.storm.scheduler;
 
 import java.util.HashMap;
@@ -23,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-
+import org.apache.storm.metric.StormMetricsRegistry;
 import org.apache.storm.utils.Utils;
 
 public class DefaultScheduler implements IScheduler {
@@ -44,7 +45,7 @@ public class DefaultScheduler implements IScheduler {
             }
 
             for (WorkerSlot slot : slots) {
-                existingSlots.remove(slot);                
+                existingSlots.remove(slot);
             }
 
             return existingSlots.keySet();
@@ -74,7 +75,8 @@ public class DefaultScheduler implements IScheduler {
             List<WorkerSlot> availableSlots = cluster.getAvailableSlots();
             Set<ExecutorDetails> allExecutors = topology.getExecutors();
 
-            Map<WorkerSlot, List<ExecutorDetails>> aliveAssigned = EvenScheduler.getAliveAssignedWorkerSlotExecutors(cluster, topology.getId());
+            Map<WorkerSlot, List<ExecutorDetails>> aliveAssigned =
+                EvenScheduler.getAliveAssignedWorkerSlotExecutors(cluster, topology.getId());
             Set<ExecutorDetails> aliveExecutors = new HashSet<ExecutorDetails>();
             for (List<ExecutorDetails> list : aliveAssigned.values()) {
                 aliveExecutors.addAll(list);
@@ -85,7 +87,7 @@ public class DefaultScheduler implements IScheduler {
 
             Set<WorkerSlot> badSlots = null;
             if (totalSlotsToUse > aliveAssigned.size() || !allExecutors.equals(aliveExecutors)) {
-                badSlots = badSlots(aliveAssigned, allExecutors.size(), totalSlotsToUse);                
+                badSlots = badSlots(aliveAssigned, allExecutors.size(), totalSlotsToUse);
             }
             if (badSlots != null) {
                 cluster.freeSlots(badSlots);
@@ -96,7 +98,7 @@ public class DefaultScheduler implements IScheduler {
     }
 
     @Override
-    public void prepare(Map<String, Object> conf) {
+    public void prepare(Map<String, Object> conf, StormMetricsRegistry metricsRegistry) {
         //noop
     }
 
@@ -106,7 +108,7 @@ public class DefaultScheduler implements IScheduler {
     }
 
     @Override
-    public Map<String, Object> config() {
+    public Map<String, Map<String, Double>> config() {
         return new HashMap<>();
     }
 }

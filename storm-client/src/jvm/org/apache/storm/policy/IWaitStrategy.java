@@ -18,23 +18,25 @@
 
 package org.apache.storm.policy;
 
+import java.util.Map;
 import org.apache.storm.Config;
 import org.apache.storm.utils.ReflectionUtils;
 
-import java.util.Map;
-
 
 public interface IWaitStrategy {
-    enum WAIT_SITUATION {SPOUT_WAIT, BOLT_WAIT, BACK_PRESSURE_WAIT}
+    static IWaitStrategy createBackPressureWaitStrategy(Map<String, Object> topologyConf) {
+        IWaitStrategy producerWaitStrategy =
+            ReflectionUtils.newInstance((String) topologyConf.get(Config.TOPOLOGY_BACKPRESSURE_WAIT_STRATEGY));
+        producerWaitStrategy.prepare(topologyConf, WaitSituation.BACK_PRESSURE_WAIT);
+        return producerWaitStrategy;
+    }
 
-    void prepare(Map<String, Object> conf, WAIT_SITUATION waitSituation);
+    void prepare(Map<String, Object> conf, WaitSituation waitSituation);
 
     /**
-     * Implementations of this method should be thread-safe (preferably no side-effects and lock-free)
-     * <p>
-     * Supports static or dynamic backoff. Dynamic backoff relies on idleCounter to
-     * estimate how long caller has been idling.
-     * <p>
+     * Implementations of this method should be thread-safe (preferably no side-effects and lock-free).
+     *
+     * <p>Supports static or dynamic backoff. Dynamic backoff relies on idleCounter to estimate how long caller has been idling.
      * <pre>
      * <code>
      *  int idleCounter = 0;
@@ -51,11 +53,9 @@ public interface IWaitStrategy {
      */
     int idle(int idleCounter) throws InterruptedException;
 
-    static IWaitStrategy createBackPressureWaitStrategy(Map<String, Object> topologyConf) {
-        IWaitStrategy producerWaitStrategy = ReflectionUtils.newInstance((String) topologyConf.get(Config.TOPOLOGY_BACKPRESSURE_WAIT_STRATEGY));
-        producerWaitStrategy.prepare(topologyConf, WAIT_SITUATION.BACK_PRESSURE_WAIT);
-        return producerWaitStrategy;
+    enum WaitSituation {
+        SPOUT_WAIT,
+        BOLT_WAIT,
+        BACK_PRESSURE_WAIT
     }
-
-
 }

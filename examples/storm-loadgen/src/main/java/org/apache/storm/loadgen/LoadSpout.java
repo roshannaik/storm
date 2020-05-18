@@ -18,11 +18,13 @@
 
 package org.apache.storm.loadgen;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.stream.Collectors;
 import org.apache.storm.metrics.hdrhistogram.HistogramMetric;
 import org.apache.storm.spout.SpoutOutputCollector;
@@ -39,7 +41,7 @@ public class LoadSpout  extends BaseRichSpout {
     private static class OutputStreamEngineWithHisto extends OutputStreamEngine {
         public final HistogramMetric histogram;
 
-        public OutputStreamEngineWithHisto(OutputStream stats, TopologyContext context) {
+        OutputStreamEngineWithHisto(OutputStream stats, TopologyContext context) {
             super(stats);
             histogram = new HistogramMetric(3600000000000L, 3);
             //TODO perhaps we can adjust the frequency later...
@@ -71,6 +73,7 @@ public class LoadSpout  extends BaseRichSpout {
     //This is an attempt to give all of the streams an equal opportunity to emit something.
     private long nextStreamCounter = 0;
     private final int numStreams;
+    private final Queue<SentWithTime> replays = new ArrayDeque<>();
 
     /**
      * Create a simple load spout with just a set rate per second on the default stream.
@@ -99,6 +102,11 @@ public class LoadSpout  extends BaseRichSpout {
 
     @Override
     public void nextTuple() {
+        if (!replays.isEmpty()) {
+            SentWithTime swt = replays.poll();
+            collector.emit(swt.streamName, swt.keyValue, swt);
+            return;
+        }
         int size = numStreams;
         for (int tries = 0; tries < size; tries++) {
             int index = Math.abs((int) (nextStreamCounter++ % size));
@@ -126,12 +134,11 @@ public class LoadSpout  extends BaseRichSpout {
 
     @Override
     public void ack(Object id) {
-        ((SentWithTime)id).done();
+        ((SentWithTime) id).done();
     }
 
     @Override
     public void fail(Object id) {
-        SentWithTime swt = (SentWithTime)id;
-        collector.emit(swt.streamName, swt.keyValue, swt);
+        replays.add((SentWithTime) id);
     }
 }

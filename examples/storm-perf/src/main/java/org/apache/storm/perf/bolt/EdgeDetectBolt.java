@@ -18,6 +18,8 @@
 
 package org.apache.storm.perf.bolt;
 
+import java.util.ArrayList;
+import java.util.Map;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -26,9 +28,6 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.openimaj.image.MBFImage;
 import org.openimaj.image.processing.edges.CannyEdgeDetector;
-
-import java.util.ArrayList;
-import java.util.Map;
 
 
 public class EdgeDetectBolt extends BaseRichBolt {

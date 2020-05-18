@@ -24,6 +24,7 @@ import static javax.ws.rs.core.Response.Status.FORBIDDEN;
 import static javax.ws.rs.core.Response.Status.OK;
 import static org.apache.commons.lang.StringEscapeUtils.escapeHtml;
 
+import com.codahale.metrics.Meter;
 import com.google.common.io.ByteStreams;
 
 import java.io.BufferedOutputStream;
@@ -32,6 +33,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -40,7 +42,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.StreamingOutput;
 
 import org.apache.storm.daemon.common.JsonResponseBuilder;
-import org.apache.storm.ui.UIHelpers;
+import org.apache.storm.daemon.ui.UIHelpers;
 
 public class LogviewerResponseBuilder {
 
@@ -61,7 +63,7 @@ public class LogviewerResponseBuilder {
      * Build a Response object representing success response with JSON entity.
      *
      * @param entity entity object to represent it as JSON
-     * @param callback callback for JSONP
+     * @param callback callbackParameterName for JSONP
      * @param origin origin
      * @see {@link JsonResponseBuilder}
      */
@@ -73,16 +75,23 @@ public class LogviewerResponseBuilder {
     /**
      * Build a Response object representing download a file.
      *
+     * @param contentDispositionName The name to set in the Content-Disposition header
      * @param file file to download
      */
-    public static Response buildDownloadFile(File file) throws IOException {
-        // do not close this InputStream in method: it will be used from jetty server
-        InputStream is = new FileInputStream(file);
-        return Response.status(OK)
-                .entity(wrapWithStreamingOutput(is))
-                .type(MediaType.APPLICATION_OCTET_STREAM_TYPE)
-                .header("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"")
-                .build();
+    public static Response buildDownloadFile(String contentDispositionName,
+        File file, Meter numFileDownloadExceptions) throws IOException {
+        try {
+            // do not close this InputStream in method: it will be used from jetty server
+            InputStream is = Files.newInputStream(file.toPath());
+            return Response.status(OK)
+                    .entity(wrapWithStreamingOutput(is))
+                    .type(MediaType.APPLICATION_OCTET_STREAM_TYPE)
+                    .header("Content-Disposition", "attachment; filename=\"" + contentDispositionName + "\"")
+                    .build();
+        } catch (IOException e) {
+            numFileDownloadExceptions.mark();
+            throw e;
+        }
     }
 
     /**
@@ -112,7 +121,7 @@ public class LogviewerResponseBuilder {
      * Build a Response object representing unauthorized user, with JSON response.
      *
      * @param user username
-     * @param callback callback for JSONP
+     * @param callback callbackParameterName for JSONP
      */
     public static Response buildUnauthorizedUserJsonResponse(String user, String callback) {
         return new JsonResponseBuilder().setData(UIHelpers.unauthorizedUserJson(user))
@@ -123,7 +132,7 @@ public class LogviewerResponseBuilder {
      * Build a Response object representing exception, with JSON response.
      *
      * @param ex Exception object
-     * @param callback callback for JSONP
+     * @param callback callbackParameterName for JSONP
      */
     public static Response buildExceptionJsonResponse(Exception ex, String callback) {
         int statusCode = 500;

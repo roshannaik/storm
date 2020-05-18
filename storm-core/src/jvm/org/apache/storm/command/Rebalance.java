@@ -1,35 +1,30 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
 
 package org.apache.storm.command;
 
+import static java.lang.String.format;
+
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.storm.generated.Nimbus;
 import org.apache.storm.generated.RebalanceOptions;
 import org.apache.storm.utils.NimbusClient;
 import org.apache.storm.utils.Utils;
+import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import static java.lang.String.format;
 
 public class Rebalance {
 
@@ -37,32 +32,41 @@ public class Rebalance {
 
     public static void main(String[] args) throws Exception {
         Map<String, Object> cl = CLI.opt("w", "wait", null, CLI.AS_INT)
-            .opt("n", "num-workers", null, CLI.AS_INT)
-            .opt("e", "executor", null, new ExecutorParser(), CLI.INTO_MAP)
-            .opt("r", "resources", null, new ResourcesParser(), CLI.INTO_MAP)
-            .opt("t", "topology-conf", null, new ConfParser(), CLI.INTO_MAP)
-            .arg("topologyName", CLI.FIRST_WINS)
-            .parse(args);
+                                    .opt("n", "num-workers", null, CLI.AS_INT)
+                                    .opt("e", "executor", null, new ExecutorParser(), CLI.INTO_MAP)
+                                    .opt("r", "resources", null, new ResourcesParser(), CLI.INTO_MAP)
+                                    .opt("t", "topology-conf", null, new ConfParser(), CLI.INTO_MAP)
+                                    .arg("topologyName", CLI.FIRST_WINS)
+                                    .parse(args);
         final String name = (String) cl.get("topologyName");
+        Utils.validateTopologyName(name);
         final RebalanceOptions rebalanceOptions = new RebalanceOptions();
         Integer wait = (Integer) cl.get("w");
-        Integer numWorkers = (Integer) cl.get("n");
-        Map<String, Integer> numExecutors = (Map<String, Integer>) cl.get("e");
-        Map<String, Map<String, Double>> resourceOverrides = (Map<String, Map<String, Double>>) cl.get("r");
-        Map<String, Object> confOverrides = (Map<String, Object>) cl.get("t");
-
         if (null != wait) {
             rebalanceOptions.set_wait_secs(wait);
         }
+        Integer numWorkers = (Integer) cl.get("n");
         if (null != numWorkers) {
             rebalanceOptions.set_num_workers(numWorkers);
         }
+        Map<String, Integer> numExecutors = (Map<String, Integer>) cl.get("e");
         if (null != numExecutors) {
             rebalanceOptions.set_num_executors(numExecutors);
         }
-
+        Map<String, Map<String, Double>> resourceOverrides = (Map<String, Map<String, Double>>) cl.get("r");
         if (null != resourceOverrides) {
             rebalanceOptions.set_topology_resources_overrides(resourceOverrides);
+        }
+
+        Map<String, Object> confOverrides = (Map<String, Object>) cl.get("t");
+        Map<String, Object> jvmOpts = Utils.readCommandLineOpts(); // values in -Dstorm.options (originally -c in storm.py)
+        if (jvmOpts != null && !jvmOpts.isEmpty()) {
+            if (confOverrides == null) {
+                confOverrides = jvmOpts;
+            } else {
+                confOverrides.putAll(jvmOpts); // override with values obtained from -Dstorm.options
+            }
+            LOG.info("Rebalancing topology with overrides {}", JSONObject.toJSONString(confOverrides));
         }
 
         if (null != confOverrides) {
@@ -104,11 +108,11 @@ public class Rebalance {
                 // But because value is coming from JSON it is going to be a Number, and we want it to be a Double.
                 // So the goal is to go through each entry and update it accordingly
                 Map<String, Map<String, Double>> ret = new HashMap<>();
-                for (Map.Entry<String, Object> compEntry: Utils.parseJson(value).entrySet()) {
+                for (Map.Entry<String, Object> compEntry : Utils.parseJson(value).entrySet()) {
                     String comp = compEntry.getKey();
                     Map<String, Number> numResources = (Map<String, Number>) compEntry.getValue();
                     Map<String, Double> doubleResource = new HashMap<>();
-                    for (Map.Entry<String, Number> entry: numResources.entrySet()) {
+                    for (Map.Entry<String, Number> entry : numResources.entrySet()) {
                         doubleResource.put(entry.getKey(), entry.getValue().doubleValue());
                     }
                     ret.put(comp, doubleResource);

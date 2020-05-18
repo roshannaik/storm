@@ -24,6 +24,7 @@ import javax.ws.rs.core.Response;
 import org.apache.storm.daemon.logviewer.utils.LogFileDownloader;
 import org.apache.storm.daemon.logviewer.utils.ResourceAuthorizer;
 import org.apache.storm.daemon.logviewer.utils.WorkerLogs;
+import org.apache.storm.metric.StormMetricsRegistry;
 
 public class LogviewerLogDownloadHandler {
 
@@ -37,35 +38,39 @@ public class LogviewerLogDownloadHandler {
      * @param daemonLogRoot root daemon log directory
      * @param workerLogs {@link WorkerLogs}
      * @param resourceAuthorizer {@link ResourceAuthorizer}
+     * @param metricsRegistry The logviewer metrics registry
      */
-    public LogviewerLogDownloadHandler(String logRoot, String daemonLogRoot, WorkerLogs workerLogs, ResourceAuthorizer resourceAuthorizer) {
+    public LogviewerLogDownloadHandler(String logRoot, String daemonLogRoot, WorkerLogs workerLogs,
+        ResourceAuthorizer resourceAuthorizer, StormMetricsRegistry metricsRegistry) {
         this.workerLogs = workerLogs;
-        this.logFileDownloadHelper = new LogFileDownloader(logRoot, daemonLogRoot, resourceAuthorizer);
+        this.logFileDownloadHelper = new LogFileDownloader(logRoot, daemonLogRoot, resourceAuthorizer, metricsRegistry);
     }
 
     /**
      * Download an worker log.
      *
+     * @param host host address
      * @param fileName file to download
      * @param user username
      * @return a Response which lets browsers download that file.
-     * @see {@link LogFileDownloader#downloadFile(String, String, boolean)}
+     * @see {@link LogFileDownloader#downloadFile(String, String, String, boolean)}
      */
-    public Response downloadLogFile(String fileName, String user) throws IOException {
+    public Response downloadLogFile(String host, String fileName, String user) throws IOException {
         workerLogs.setLogFilePermission(fileName);
-        return logFileDownloadHelper.downloadFile(fileName, user, false);
+        return logFileDownloadHelper.downloadFile(host, fileName, user, false);
     }
 
     /**
      * Download a daemon log.
      *
+     * @param host host address
      * @param fileName file to download
      * @param user username
      * @return a Response which lets browsers download that file.
-     * @see {@link LogFileDownloader#downloadFile(String, String, boolean)}
+     * @see {@link LogFileDownloader#downloadFile(String, String, String, boolean)}
      */
-    public Response downloadDaemonLogFile(String fileName, String user) throws IOException {
-        return logFileDownloadHelper.downloadFile(fileName, user, true);
+    public Response downloadDaemonLogFile(String host, String fileName, String user) throws IOException {
+        return logFileDownloadHelper.downloadFile(host, fileName, user, true);
     }
 
 }

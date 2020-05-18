@@ -1,20 +1,15 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
+
 package org.apache.storm.multilang;
 
 import java.io.BufferedReader;
@@ -28,26 +23,23 @@ import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-
-import org.apache.storm.utils.Utils;
-import org.json.simple.JSONObject;
-import org.json.simple.JSONValue;
-import org.json.simple.parser.ParseException;
-
+import org.apache.storm.shade.org.json.simple.JSONObject;
+import org.apache.storm.shade.org.json.simple.JSONValue;
+import org.apache.storm.shade.org.json.simple.parser.ParseException;
 import org.apache.storm.task.TopologyContext;
+import org.apache.storm.utils.Utils;
 
 /**
  * JsonSerializer implements the JSON multilang protocol.
  */
 public class JsonSerializer implements ISerializer {
+    public static final String DEFAULT_CHARSET = "UTF-8";
     //ANY CHANGE TO THIS CODE MUST BE SERIALIZABLE COMPATIBLE OR THERE WILL BE PROBLEMS
     private static final long serialVersionUID = 2548814660410474022L;
-
-    public static final String DEFAULT_CHARSET = "UTF-8";
-
     private transient BufferedWriter processIn;
     private transient BufferedReader processOut;
 
+    @Override
     public void initialize(OutputStream processIn, InputStream processOut) {
         try {
             this.processIn = new BufferedWriter(new OutputStreamWriter(processIn, DEFAULT_CHARSET));
@@ -57,8 +49,9 @@ public class JsonSerializer implements ISerializer {
         }
     }
 
+    @Override
     public Number connect(Map<String, Object> conf, TopologyContext context)
-            throws IOException, NoOutputException {
+        throws IOException, NoOutputException {
         JSONObject setupInfo = new JSONObject();
         setupInfo.put("pidDir", context.getPIDDir());
         setupInfo.put("conf", conf);
@@ -69,6 +62,7 @@ public class JsonSerializer implements ISerializer {
         return pid;
     }
 
+    @Override
     public void writeBoltMsg(BoltMsg boltMsg) throws IOException {
         JSONObject obj = new JSONObject();
         obj.put("id", boltMsg.getId());
@@ -79,6 +73,7 @@ public class JsonSerializer implements ISerializer {
         writeMessage(obj);
     }
 
+    @Override
     public void writeSpoutMsg(SpoutMsg msg) throws IOException {
         JSONObject obj = new JSONObject();
         obj.put("command", msg.getCommand());
@@ -86,6 +81,7 @@ public class JsonSerializer implements ISerializer {
         writeMessage(obj);
     }
 
+    @Override
     public void writeTaskIds(List<Integer> taskIds) throws IOException {
         writeMessage(taskIds);
     }
@@ -100,6 +96,7 @@ public class JsonSerializer implements ISerializer {
         processIn.flush();
     }
 
+    @Override
     public ShellMsg readShellMsg() throws IOException, NoOutputException {
         JSONObject msg = (JSONObject) readMessage();
         ShellMsg shellMsg = new ShellMsg();
@@ -114,8 +111,9 @@ public class JsonSerializer implements ISerializer {
         shellMsg.setMsg(log);
 
         String stream = (String) msg.get("stream");
-        if (stream == null)
+        if (stream == null) {
             stream = Utils.DEFAULT_STREAM_ID;
+        }
         shellMsg.setStream(stream);
 
         Object taskObj = msg.get("task");
@@ -125,8 +123,8 @@ public class JsonSerializer implements ISerializer {
             shellMsg.setTask(0);
         }
 
-        Object need_task_ids = msg.get("need_task_ids");
-        if (need_task_ids == null || ((Boolean) need_task_ids).booleanValue()) {
+        Object needTaskIds = msg.get("need_task_ids");
+        if (needTaskIds == null || ((Boolean) needTaskIds).booleanValue()) {
             shellMsg.setNeedTaskIds(true);
         } else {
             shellMsg.setNeedTaskIds(false);
@@ -143,22 +141,22 @@ public class JsonSerializer implements ISerializer {
                 shellMsg.addAnchor((String) o);
             }
         }
-       
-        Object nameObj = msg.get("name"); 
+
+        Object nameObj = msg.get("name");
         String metricName = null;
         if (nameObj != null && nameObj instanceof String) {
             metricName = (String) nameObj;
         }
         shellMsg.setMetricName(metricName);
-        
+
         Object paramsObj = msg.get("params");
         shellMsg.setMetricParams(paramsObj);
 
         if (command.equals("log")) {
             Object logLevelObj = msg.get("level");
             if (logLevelObj != null && logLevelObj instanceof Long) {
-                long logLevel = (Long)logLevelObj;
-                shellMsg.setLogLevel((int)logLevel);
+                long logLevel = (Long) logLevelObj;
+                shellMsg.setLogLevel((int) logLevel);
             }
         }
 
@@ -185,7 +183,7 @@ public class JsonSerializer implements ISerializer {
                     errorMessage.append(" No output read.\n");
                 } else {
                     errorMessage.append(" Currently read output: "
-                            + line.toString() + "\n");
+                                        + line.toString() + "\n");
                 }
                 errorMessage.append("Serializer Exception:\n");
                 throw new NoOutputException(errorMessage.toString());

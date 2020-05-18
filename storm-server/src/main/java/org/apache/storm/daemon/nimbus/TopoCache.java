@@ -1,19 +1,13 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The ASF licenses this file to you under the Apache License, Version
+ * 2.0 (the "License"); you may not use this file except in compliance with the License.  You may obtain a copy of the License at
  * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
  * <p>
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+ * and limitations under the License.
  */
 
 package org.apache.storm.daemon.nimbus;
@@ -24,9 +18,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-
 import javax.security.auth.Subject;
-
 import org.apache.storm.blobstore.BlobStore;
 import org.apache.storm.blobstore.BlobStoreAclHandler;
 import org.apache.storm.generated.AccessControl;
@@ -48,17 +40,6 @@ import org.slf4j.LoggerFactory;
  */
 public class TopoCache {
     public static final Logger LOG = LoggerFactory.getLogger(TopoCache.class);
-
-    private static final class WithAcl<T> {
-        public final List<AccessControl> acl;
-        public final T data;
-
-        public WithAcl(List<AccessControl> acl, T data) {
-            this.acl = acl;
-            this.data = data;
-        }
-    }
-
     private final BlobStore store;
     private final BlobStoreAclHandler aclHandler;
     private final ConcurrentHashMap<String, WithAcl<StormTopology>> topos = new ConcurrentHashMap<>();
@@ -242,5 +223,15 @@ public class TopoCache {
     public void clear() {
         confs.clear();
         topos.clear();
+    }
+
+    private static final class WithAcl<T> {
+        public final List<AccessControl> acl;
+        public final T data;
+
+        WithAcl(List<AccessControl> acl, T data) {
+            this.acl = acl;
+            this.data = data;
+        }
     }
 }
